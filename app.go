@@ -232,7 +232,7 @@ func (a *App) LoadFolderTree(ctx context.Context, root string) ([]FileTreeNode, 
 		return nil, errors.New("所选路径不是文件夹")
 	}
 
-	nodes, err := scanFolderLevel(cleanRoot)
+	nodes, err := scanFolderTree(cleanRoot)
 	if err != nil {
 		return nil, fmt.Errorf("扫描文件夹失败: %w", err)
 	}
@@ -639,6 +639,67 @@ func scanFolderLevel(root string) ([]FileTreeNode, error) {
 func folderHasChildren(path string) bool {
 	entries, err := os.ReadDir(path)
 	return err == nil && len(entries) > 0
+}
+
+// scanFolderTree 递归扫描整棵文件夹树，初始化时一次性加载全部节点。
+// 为避免超深目录导致栈溢出或耗时过长，限制递归深度。
+func scanFolderTree(root string) ([]FileTreeNode, error) {
+	return scanFolderTreeDepth(root, 0)
+}
+
+// maxTreeScanDepth 递归扫描的最大深度，超过后对应文件夹回退为懒加载。
+const maxTreeScanDepth = 64
+
+func scanFolderTreeDepth(root string, depth int) ([]FileTreeNode, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+
+	nodes := make([]FileTreeNode, 0, len(entries))
+	for _, entry := range entries {
+		fullPath := filepath.Join(root, entry.Name())
+		extension := strings.ToLower(filepath.Ext(entry.Name()))
+		node := FileTreeNode{
+			Name:      entry.Name(),
+			Path:      fullPath,
+			Extension: extension,
+		}
+
+		if entry.IsDir() {
+			node.Type = "folder"
+			if depth >= maxTreeScanDepth {
+				// 超过深度限制，保持懒加载
+				node.Loaded = false
+				node.HasChild = folderHasChildren(fullPath)
+			} else {
+				children, err := scanFolderTreeDepth(fullPath, depth+1)
+				if err != nil {
+					// 无法访问的子目录（权限等）保持未加载，不中断整棵树
+					node.Loaded = false
+					node.HasChild = false
+				} else {
+					node.Children = children
+					node.Loaded = true
+					node.HasChild = len(children) > 0
+				}
+			}
+		} else {
+			node.Type = "file"
+			node.Loaded = true
+		}
+
+		nodes = append(nodes, node)
+	}
+
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].Type != nodes[j].Type {
+			return nodes[i].Type == "folder"
+		}
+		return strings.ToLower(nodes[i].Name) < strings.ToLower(nodes[j].Name)
+	})
+
+	return nodes, nil
 }
 
 func detectTextEncoding(data []byte) string {

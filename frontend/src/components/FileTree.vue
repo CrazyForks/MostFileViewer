@@ -7,6 +7,7 @@
       :node="node"
       :active-path="activePath"
       :context-active-path="contextMenu.node?.path || ''"
+      :search-active="searchActive"
       @open-file="$emit('open-file', $event)"
       @load-folder="$emit('load-folder', $event)"
       @node-context-menu="openContextMenu"
@@ -41,6 +42,10 @@ defineProps({
   activePath: {
     type: String,
     default: ''
+  },
+  searchActive: {
+    type: Boolean,
+    default: false
   }
 });
 

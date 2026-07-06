@@ -49,12 +49,84 @@
             <div class="workspace__body" :style="workspaceStyle">
                 <aside v-if="sidebarOpen" class="workspace__sidebar">
                     <div class="pane-container">
-                        <div class="pane-card__header">
-                            <span>{{ folderName || "文件树" }}</span>
+                        <div
+                            class="pane-card__header"
+                            :class="{ 'pane-card__header--search': treeSearchActive }"
+                        >
+                            <template v-if="treeSearchActive">
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke-width="1.5"
+                                    stroke="currentColor"
+                                    class="pane-card__search-icon pane-card__search-icon--input"
+                                >
+                                    <path
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                        d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+                                    />
+                                </svg>
+                                <input
+                                    ref="treeSearchInput"
+                                    v-model="treeSearchQuery"
+                                    type="text"
+                                    class="pane-card__search-input"
+                                    placeholder="过滤文件…"
+                                    @keydown.esc="closeTreeSearch"
+                                />
+                                <button
+                                    type="button"
+                                    class="pane-card__search-btn pane-card__search-btn--close"
+                                    title="关闭搜索"
+                                    @click="closeTreeSearch"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="pane-card__search-icon"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="M6 18 18 6M6 6l12 12"
+                                        />
+                                    </svg>
+                                </button>
+                            </template>
+                            <template v-else>
+                                <span>{{ folderName || "文件树" }}</span>
+                                <button
+                                    type="button"
+                                    class="pane-card__search-btn"
+                                    title="搜索"
+                                    @click="handleTreeSearch"
+                                >
+                                    <svg
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        fill="none"
+                                        viewBox="0 0 24 24"
+                                        stroke-width="1.5"
+                                        stroke="currentColor"
+                                        class="pane-card__search-icon"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+                                        />
+                                    </svg>
+                                </button>
+                            </template>
                         </div>
                         <FileTree
-                            :nodes="treeData"
+                            :nodes="displayTreeData"
                             :active-path="activeTabPath"
+                            :search-active="isTreeFiltering"
                             @open-file="handleOpenFile"
                             @load-folder="handleLoadFolderChildren"
                             @show-in-file-manager="handleShowInFileManager"
@@ -107,6 +179,9 @@ const openTabs = ref([]);
 const activeTabPath = ref("");
 const previewTabs = ref(null);
 const globalError = ref("");
+const treeSearchActive = ref(false);
+const treeSearchQuery = ref("");
+const treeSearchInput = ref(null);
 let removeResizeListeners = null;
 let removeFilesDroppedListener = null;
 let removeThemeChangeListener = null;
@@ -216,6 +291,45 @@ const folderName = computed(() => {
     const trimmed = selectedFolder.value.replace(/[\\/]+$/, "");
     return trimmed.split(/[\\/]/).pop() || trimmed;
 });
+
+// 是否处于有效的搜索过滤状态（激活且有非空关键字）
+const isTreeFiltering = computed(
+    () => treeSearchActive.value && treeSearchQuery.value.trim() !== "",
+);
+
+// 根据搜索关键字过滤文件树：保留名称匹配的文件，以及包含匹配项的文件夹（并强制展开）。
+// 注意：文件树为懒加载，未展开的文件夹其子节点尚未加载，过滤仅作用于已加载的节点。
+const displayTreeData = computed(() => {
+    if (!isTreeFiltering.value) {
+        return treeData.value;
+    }
+    const keyword = treeSearchQuery.value.trim().toLowerCase();
+    return filterTreeNodes(treeData.value, keyword);
+});
+
+function filterTreeNodes(nodes, keyword) {
+    const result = [];
+    for (const node of nodes) {
+        const nameMatched = (node.name || "").toLowerCase().includes(keyword);
+        if (node.type === "folder") {
+            const filteredChildren = filterTreeNodes(
+                node.children || [],
+                keyword,
+            );
+            if (nameMatched || filteredChildren.length > 0) {
+                result.push({
+                    ...node,
+                    children: filteredChildren,
+                    // 过滤时强制展开以显示命中的后代节点
+                    forceExpanded: filteredChildren.length > 0,
+                });
+            }
+        } else if (nameMatched) {
+            result.push({ ...node });
+        }
+    }
+    return result;
+}
 
 // 判断是否是真正的文件夹预览（而不是单个文件预览）
 const isActualFolderPreview = computed(() => {
@@ -674,6 +788,18 @@ async function handleOpenFile(node) {
     }
 
     await openFileNode(node);
+}
+
+function handleTreeSearch() {
+    treeSearchActive.value = true;
+    nextTick(() => {
+        treeSearchInput.value?.focus();
+    });
+}
+
+function closeTreeSearch() {
+    treeSearchActive.value = false;
+    treeSearchQuery.value = "";
 }
 
 async function handleShowInFileManager(node) {
@@ -1285,5 +1411,64 @@ function stopAutoSave() {
     font-size: 16px;
     border-bottom: 1px solid var(--border-subtle);
     font-weight: 600;
+}
+
+.pane-card__search-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border: none;
+    background: transparent;
+    border-radius: 4px;
+    color: var(--text-secondary, inherit);
+    cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.workspace__sidebar:hover .pane-card__search-btn {
+    opacity: 1;
+    visibility: visible;
+}
+
+.pane-card__search-btn:hover {
+    background-color: var(--bg-hover, rgba(0, 0, 0, 0.08));
+}
+
+.pane-card__search-icon {
+    width: 16px;
+    height: 16px;
+}
+
+.pane-card__header--search {
+    gap: 6px;
+}
+
+.pane-card__search-icon--input {
+    flex-shrink: 0;
+    color: var(--text-secondary, inherit);
+}
+
+.pane-card__search-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-primary, inherit);
+}
+
+.pane-card__search-input::placeholder {
+    color: var(--text-muted, #999);
+}
+
+.pane-card__search-btn--close {
+    opacity: 1;
+    visibility: visible;
+    flex-shrink: 0;
 }
 </style>

@@ -13,12 +13,12 @@
                 :type="isFolder ? 'folder' : 'file'"
                 :name="node.name"
                 :extension="node.extension"
-                :open="isFolder && expanded"
+                :open="isFolder && isExpanded"
             />
             <span class="tree-node__name">{{ node.name }}</span>
         </button>
 
-        <div v-if="isFolder && expanded" class="tree-node__children">
+        <div v-if="isFolder && isExpanded" class="tree-node__children">
             <FileTreeNode
                 v-for="child in node.children || []"
                 :key="child.path"
@@ -26,6 +26,7 @@
                 :depth="depth + 1"
                 :active-path="activePath"
                 :context-active-path="contextActivePath"
+                :search-active="searchActive"
                 @open-file="$emit('open-file', $event)"
                 @load-folder="$emit('load-folder', $event)"
                 @node-context-menu="$emit('node-context-menu', $event)"
@@ -55,11 +56,23 @@ const props = defineProps({
         type: String,
         default: "",
     },
+    searchActive: {
+        type: Boolean,
+        default: false,
+    },
 });
 
 const emit = defineEmits(["open-file", "load-folder", "node-context-menu"]);
 const isFolder = computed(() => props.node.type === "folder");
 const expanded = ref(false);
+
+// 搜索过滤时以父级下发的 forceExpanded 为准强制展开，否则使用本地展开状态
+const isExpanded = computed(() => {
+    if (props.searchActive && isFolder.value) {
+        return props.node.forceExpanded === true;
+    }
+    return expanded.value;
+});
 
 // 同一时间只展示一条背景色：右键菜单打开时以右键选中项为准，否则以左键选中项为准
 const isHighlighted = computed(() => {
@@ -73,11 +86,15 @@ const caret = computed(() => {
     if (!isFolder.value) {
         return "·";
     }
-    return expanded.value ? "▾" : "▸";
+    return isExpanded.value ? "▾" : "▸";
 });
 
 function handleClick() {
     if (isFolder.value) {
+        // 搜索过滤时文件夹展开由 forceExpanded 强制控制，点击不切换本地展开状态
+        if (props.searchActive) {
+            return;
+        }
         expanded.value = !expanded.value;
         if (expanded.value && props.node.hasChild && !props.node.loaded) {
             emit("load-folder", props.node);

@@ -25,7 +25,7 @@ import { useTheme } from "../composables/useTheme.js";
 import {
     isStandaloneWebFile,
     isMarkdownFile,
-} from "../composables/useSyntaxLanguage.js";
+} from "../composables/useFileTypes.js";
 import "./markdown-preview.css";
 
 const props = defineProps({
@@ -60,12 +60,12 @@ function renderDiagrams(force = false) {
     });
 }
 
-// 内容或文件切换时重新渲染 Markdown。
+// 内容或文件切换时重新渲染 Markdown（异步：代码块高亮通过懒加载语言包完成）。
 watch(
     [() => props.content, () => props.extension],
-    () => {
+    async () => {
         if (isMarkdown.value) {
-            markdownHtml.value = renderMarkdown(props.content);
+            markdownHtml.value = await renderMarkdown(props.content);
             renderDiagrams();
         } else {
             markdownHtml.value = "";

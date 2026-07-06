@@ -20,9 +20,18 @@ function encodeMermaidSource(text) {
     return btoa(unescape(encodeURIComponent(text)));
 }
 
+function encodeCodeSource(text) {
+    return btoa(unescape(encodeURIComponent(text)));
+}
+
+function decodeCodeSource(encoded) {
+    return decodeURIComponent(escape(atob(encoded)));
+}
+
 // 自定义代码块渲染：用 CodeMirror 的 Lezer 解析器生成带 tok-* class 的高亮 HTML，
 // class 配色在 theme.css 中映射到 --cm-syntax-* 变量，与编辑器一致并联动明暗主题。
-// 无法识别语言或解析失败时回退为转义后的纯文本。
+// 由于语言包改为懒加载，renderer 先输出带 data-raw-code 的占位代码块，
+// 再由 renderMarkdown 异步高亮后替换内容。
 marked.use({
     renderer: {
         code({ text, lang }) {
@@ -32,10 +41,10 @@ marked.use({
             if (language === "mermaid") {
                 return `<div class="mermaid-diagram" data-mermaid-source="${encodeMermaidSource(text)}"></div>\n`;
             }
-            const highlighted = highlightCodeToHtml(text, language);
-            const body = highlighted ?? escapeHtml(text);
+            // 普通代码块：先输出转义后的纯文本占位，data-raw-code 供异步高亮替换
             const langClass = language ? ` class="language-${language}"` : "";
-            return `<pre><code${langClass}>${body}</code></pre>\n`;
+            const encoded = encodeCodeSource(text);
+            return `<pre><code${langClass} data-raw-code="${encoded}" data-lang="${language}">${escapeHtml(text)}</code></pre>\n`;
         },
     },
 });
@@ -50,12 +59,45 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 
 /**
  * 将 Markdown 源码解析为经过净化的安全 HTML 字符串。
+ * 代码块通过懒加载的语言包异步高亮；无法识别语言时回退为转义纯文本。
  * @param {string} source Markdown 源文本
- * @returns {string} 可直接用于 v-html 的净化后 HTML
+ * @returns {Promise<string>} 可直接用于 v-html 的净化后 HTML
  */
-export function renderMarkdown(source) {
+export async function renderMarkdown(source) {
     const rawHtml = marked.parse(source ?? "");
-    return DOMPurify.sanitize(rawHtml, {
+
+    // 使用 DOM 容器解析 HTML，定位代码块占位节点并异步高亮
+    const container = document.createElement("div");
+    container.innerHTML = rawHtml;
+
+    const codeBlocks = container.querySelectorAll("code[data-raw-code]");
+    if (codeBlocks.length > 0) {
+        await Promise.all(
+            Array.from(codeBlocks).map(async (block) => {
+                const lang = block.getAttribute("data-lang") || "";
+                const encoded = block.getAttribute("data-raw-code") || "";
+                // 清理 data 属性，避免残留到最终 HTML
+                block.removeAttribute("data-raw-code");
+                block.removeAttribute("data-lang");
+
+                if (!encoded) return;
+
+                let code;
+                try {
+                    code = decodeCodeSource(encoded);
+                } catch {
+                    return;
+                }
+
+                const highlighted = await highlightCodeToHtml(code, lang);
+                if (highlighted) {
+                    block.innerHTML = highlighted;
+                }
+            }),
+        );
+    }
+
+    return DOMPurify.sanitize(container.innerHTML, {
         ADD_ATTR: ["target", "rel", "class", "data-mermaid-source"],
     });
 }

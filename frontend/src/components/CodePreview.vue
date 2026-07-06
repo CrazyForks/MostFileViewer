@@ -140,10 +140,10 @@ import { useTheme } from "../composables/useTheme.js";
 import {
     syntaxOptions,
     detectSyntaxKey,
-    resolveLanguageBySyntaxKey,
     isStandaloneWebFile,
     isMarkdownFile,
-} from "../composables/useSyntaxLanguage.js";
+} from "../composables/useFileTypes.js";
+import { resolveLanguageBySyntaxKey } from "../composables/useLanguageLoader.js";
 import {
     codeHighlightStyle,
     chineseSearchPhrases,
@@ -227,6 +227,8 @@ const editable = new Compartment();
 let editor = null;
 let syncingFromProps = false;
 let documentSyncToken = 0;
+// 语言加载令牌：每次发起异步语言加载时递增，加载完成后校验是否仍为最新，避免竞态覆盖。
+let languageLoadToken = 0;
 // 编辑时实时刷新 Markdown 预览的防抖定时器，避免逐字符渲染带来的性能开销。
 let markdownLivePreviewTimer = null;
 const MARKDOWN_LIVE_PREVIEW_DELAY = 120;
@@ -291,9 +293,11 @@ function scheduleMarkdownLivePreview() {
     }
     markdownLivePreviewTimer = setTimeout(() => {
         markdownLivePreviewTimer = null;
-        markdownPreviewHtml.value = renderMarkdown(getContent());
-        renderMarkdownMermaid();
-        refreshMarkdownScrollSync();
+        void renderMarkdown(getContent()).then((html) => {
+            markdownPreviewHtml.value = html;
+            renderMarkdownMermaid();
+            refreshMarkdownScrollSync();
+        });
     }, MARKDOWN_LIVE_PREVIEW_DELAY);
 }
 
@@ -326,9 +330,11 @@ watch(
             return;
         }
         if (isMarkdownPreviewFile.value) {
-            markdownPreviewHtml.value = renderMarkdown(getContent());
-            renderMarkdownMermaid();
-            refreshMarkdownScrollSync();
+            void renderMarkdown(getContent()).then((html) => {
+                markdownPreviewHtml.value = html;
+                renderMarkdownMermaid();
+                refreshMarkdownScrollSync();
+            });
         } else {
             webPreviewContent.value = getContent();
         }
@@ -382,7 +388,7 @@ watch(
                             scheduleMarkdownLivePreview();
                         }),
                         editorTheme,
-                        language.of(resolveSelectedLanguage()),
+                        language.of([]),
                     ],
                 }),
                 parent: container,
@@ -390,6 +396,7 @@ watch(
             lastContentVersion = contentVersion;
             lastExtension = extension;
             lastName = name;
+            void configureLanguage();
             return;
         }
 
@@ -406,9 +413,7 @@ watch(
 
         if (languageChanged) {
             documentSyncToken += 1;
-            editor.dispatch({
-                effects: language.reconfigure(resolveSelectedLanguage()),
-            });
+            void configureLanguage();
         }
     },
     { immediate: true, flush: "post" },
@@ -428,7 +433,6 @@ onBeforeUnmount(() => {
 
 async function replaceEditorContent(content) {
     const token = ++documentSyncToken;
-    const languageEffect = language.reconfigure(resolveSelectedLanguage());
 
     syncingFromProps = true;
     syncingDocument.value = content.length > LARGE_CONTENT_CHARS;
@@ -448,41 +452,41 @@ async function replaceEditorContent(content) {
                     to: editor.state.doc.length,
                     insert: content,
                 },
-                effects: languageEffect,
             });
-            return;
-        }
-
-        editor.dispatch({
-            changes: {
-                from: 0,
-                to: editor.state.doc.length,
-                insert: "",
-            },
-            effects: languageEffect,
-        });
-
-        for (let offset = 0; offset < content.length; ) {
-            if (token !== documentSyncToken || !editor) {
-                return;
-            }
-
-            await nextFrame();
-            let nextOffset = getSafeChunkEnd(
-                content,
-                offset + CONTENT_CHUNK_CHARS,
-            );
-            if (nextOffset <= offset) {
-                nextOffset = Math.min(content.length, offset + CONTENT_CHUNK_CHARS);
-            }
+        } else {
             editor.dispatch({
                 changes: {
-                    from: editor.state.doc.length,
-                    insert: content.slice(offset, nextOffset),
+                    from: 0,
+                    to: editor.state.doc.length,
+                    insert: "",
                 },
             });
-            offset = nextOffset;
+
+            for (let offset = 0; offset < content.length; ) {
+                if (token !== documentSyncToken || !editor) {
+                    return;
+                }
+
+                await nextFrame();
+                let nextOffset = getSafeChunkEnd(
+                    content,
+                    offset + CONTENT_CHUNK_CHARS,
+                );
+                if (nextOffset <= offset) {
+                    nextOffset = Math.min(content.length, offset + CONTENT_CHUNK_CHARS);
+                }
+                editor.dispatch({
+                    changes: {
+                        from: editor.state.doc.length,
+                        insert: content.slice(offset, nextOffset),
+                    },
+                });
+                offset = nextOffset;
+            }
         }
+
+        // 内容就位后异步加载语言并重新配置高亮
+        void configureLanguage();
     } finally {
         if (token === documentSyncToken) {
             syncingFromProps = false;
@@ -534,9 +538,7 @@ function handleSyntaxChange(event) {
 
     selectedSyntax.value = event.target.value;
     documentSyncToken += 1;
-    editor?.dispatch({
-        effects: language.reconfigure(resolveSelectedLanguage()),
-    });
+    void configureLanguage();
 }
 
 function handlePreviewClick() {
@@ -564,10 +566,12 @@ function handleMarkdownPreviewClick() {
         return;
     }
 
-    markdownPreviewHtml.value = renderMarkdown(getContent());
     webPreviewVisible.value = true;
-    renderMarkdownMermaid();
-    refreshMarkdownScrollSync();
+    void renderMarkdown(getContent()).then((html) => {
+        markdownPreviewHtml.value = html;
+        renderMarkdownMermaid();
+        refreshMarkdownScrollSync();
+    });
 }
 
 // 请求在新标签页中打开当前文件的只读预览，携带编辑器中的最新内容。
@@ -594,8 +598,17 @@ function normalizeEncoding(encoding) {
         : "utf-8";
 }
 
-function resolveSelectedLanguage() {
-    return resolveLanguageBySyntaxKey(selectedSyntax.value);
+// 异步加载当前语法键对应的 CodeMirror 语言支持并重新配置编辑器。
+// 使用令牌防竞态：仅最后一次调用的结果会生效。
+async function configureLanguage() {
+    const token = ++languageLoadToken;
+    const lang = await resolveLanguageBySyntaxKey(selectedSyntax.value);
+    if (token !== languageLoadToken || !editor) {
+        return;
+    }
+    editor.dispatch({
+        effects: language.reconfigure(lang),
+    });
 }
 </script>
 

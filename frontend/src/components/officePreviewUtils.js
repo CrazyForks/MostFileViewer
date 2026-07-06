@@ -1,6 +1,6 @@
-import docxWasmUrl from "../../node_modules/@silurus/ooxml/dist/docx_parser_bg.wasm?url&inline";
-import pptxWasmUrl from "../../node_modules/@silurus/ooxml/dist/pptx_parser_bg.wasm?url&inline";
-import xlsxWasmUrl from "../../node_modules/@silurus/ooxml/dist/xlsx_parser_bg.wasm?url&inline";
+import docxWasmUrl from "../../node_modules/@silurus/ooxml/dist/docx_parser_bg.wasm?url";
+import pptxWasmUrl from "../../node_modules/@silurus/ooxml/dist/pptx_parser_bg.wasm?url";
+import xlsxWasmUrl from "../../node_modules/@silurus/ooxml/dist/xlsx_parser_bg.wasm?url";
 
 export const OFFICE_WORKER_TIMEOUT_MS = 15000;
 

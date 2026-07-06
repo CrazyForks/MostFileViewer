@@ -57,7 +57,7 @@
 ### 前置要求
 
 - **Go** 1.25+
-- **Node.js** 18+ / **Bun**
+- **Node.js** 20.19+ / **Bun**
 - **Wails v3 CLI**
 
 ```bash
@@ -158,13 +158,13 @@ task package
 
 | 依赖 | 用途 |
 |------|------|
-| **Vue 3** + **Vite 5** | 前端框架与构建 |
+| **Vue 3** + **Vite 7** | 前端框架与构建 |
 | **LayUI Vue** | UI 组件库 |
 | **CodeMirror 6** (+15 语言包) | 代码编辑器与语法高亮 |
 | **marked** + **DOMPurify** | Markdown 解析与 HTML 净化 |
 | **mermaid** | Markdown 中的图表渲染 |
 | **@wailsio/runtime** | Wails JS 运行时桥接 |
-| **docx-preview** | Word 文档渲染 |
+| **@silurus/ooxml** | Word 文档渲染（Rust + WASM + Canvas） |
 | **exceljs** + **papaparse** | Excel / CSV 渲染 |
 | **pptx-preview** | PowerPoint 渲染 |
 | **@tanstack/vue-virtual** | 虚拟滚动（大目录树） |

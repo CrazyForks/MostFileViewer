@@ -1,9 +1,16 @@
 <template>
-    <div ref="host" class="word-preview" @wheel="handleWheel"></div>
+    <div ref="host" class="word-preview"></div>
 </template>
 
 <script setup>
-import { nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { useTheme } from "../composables/useTheme";
+import {
+    OFFICE_WORKER_TIMEOUT_MS,
+    getOfficeWasmUrl,
+    normalizeOfficePreviewError,
+    waitForRenderableHost,
+} from "./officePreviewUtils";
 
 const props = defineProps({
     src: {
@@ -12,145 +19,87 @@ const props = defineProps({
     },
 });
 
-const ZOOM_STEP = 0.1;
-const MIN_USER_SCALE = 0.5;
-const MAX_USER_SCALE = 3;
-
 const emit = defineEmits(["error"]);
+
 const host = ref(null);
+let viewer = null;
 let renderSequence = 0;
-let fitFrame = 0;
-let userScale = 1;
 
-function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
+const { currentTheme } = useTheme();
+
+function getThemeBackground() {
+    const value = getComputedStyle(document.documentElement)
+        .getPropertyValue("--bg-preview")
+        .trim();
+    return value || "#f0f0f0";
 }
 
-function queueFitPages() {
-    if (fitFrame) {
-        cancelAnimationFrame(fitFrame);
-    }
+async function render(source) {
+    const currentRender = ++renderSequence;
 
-    fitFrame = requestAnimationFrame(() => {
-        fitFrame = 0;
-        fitPagesToContainer();
-    });
+    viewer?.destroy();
+    viewer = null;
+
+    if (!source || !host.value) return;
+
+    try {
+        if (!(await waitForRenderableHost(host.value))) {
+            if (currentRender === renderSequence) {
+                emit("error", "预览区域尺寸异常，无法渲染 Word 文档");
+            }
+            return;
+        }
+
+        const { DocxScrollViewer } = await import("@silurus/ooxml/docx");
+
+        if (currentRender !== renderSequence) return;
+
+        viewer = new DocxScrollViewer(host.value, {
+            background: getThemeBackground(),
+            gap: 24,
+            paddingTop: 28,
+            enableTextSelection: true,
+            enableZoom: true,
+            wasmUrl: getOfficeWasmUrl("word"),
+            workerTimeoutMs: OFFICE_WORKER_TIMEOUT_MS,
+            onError: (err) => emit("error", normalizeOfficePreviewError(err)),
+        });
+
+        await viewer.load(source);
+
+        if (currentRender !== renderSequence) {
+            viewer?.destroy();
+            viewer = null;
+        }
+    } catch (error) {
+        if (currentRender !== renderSequence) return;
+        viewer?.destroy();
+        viewer = null;
+        emit("error", normalizeOfficePreviewError(error));
+    }
 }
 
-function fitPagesToContainer() {
-    const container = host.value;
-    const wrapper = container?.querySelector(".docx-wrapper");
-
-    if (!container || !wrapper) {
-        return;
-    }
-
-    const firstPage = wrapper.querySelector("section.docx");
-
-    if (!firstPage) {
-        return;
-    }
-
-    wrapper.style.setProperty("--docx-page-scale", "1");
-
-    const wrapperStyle = getComputedStyle(wrapper);
-    const horizontalPadding =
-        parseFloat(wrapperStyle.paddingLeft || "0") +
-        parseFloat(wrapperStyle.paddingRight || "0");
-    const availableWidth = Math.max(
-        0,
-        container.clientWidth - horizontalPadding,
-    );
-    const pageWidth = firstPage.getBoundingClientRect().width;
-    const fitScale = Math.min(1, availableWidth / pageWidth);
-    const scale = fitScale * userScale;
-    const pageScale = Number.isFinite(scale) ? Math.max(0.1, scale) : 1;
-    const contentWidth = Math.ceil(pageWidth * pageScale + horizontalPadding);
-
-    wrapper.style.setProperty("--docx-page-scale", pageScale.toFixed(4));
-    wrapper.style.minWidth = `max(100%, ${contentWidth}px)`;
-}
-
-function handleWheel(event) {
-    if (!event.ctrlKey) {
-        return;
-    }
-
-    event.preventDefault();
-
-    const direction = event.deltaY < 0 ? 1 : -1;
-    userScale = clamp(
-        Number((userScale + direction * ZOOM_STEP).toFixed(2)),
-        MIN_USER_SCALE,
-        MAX_USER_SCALE,
-    );
-    queueFitPages();
-}
-
+// 首次渲染在 onMounted 中触发，确保 host 模板 ref 已绑定到 DOM。
+// watch 仅负责后续 src 变化时重新渲染（跳过初始值，避免与 onMounted 重复）。
 watch(
-    [() => props.src, host],
-    async ([nextSource, container]) => {
-        const currentRender = ++renderSequence;
-
-        if (!container) {
-            return;
-        }
-
-        container.replaceChildren();
-        userScale = 1;
-
-        if (!nextSource) {
-            return;
-        }
-
-        const renderRoot = document.createElement("div");
-
-        try {
-            const { renderAsync } = await import("docx-preview");
-
-            await renderAsync(nextSource, renderRoot, renderRoot, {
-                className: "docx",
-                inWrapper: true,
-                breakPages: true,
-                ignoreLastRenderedPageBreak: true,
-                renderHeaders: true,
-                renderFooters: true,
-                renderFootnotes: true,
-                renderEndnotes: true,
-                renderComments: true,
-                renderAltChunks: true,
-                experimental: true,
-                useBase64URL: true,
-            });
-
-            if (currentRender !== renderSequence) {
-                return;
-            }
-
-            container.replaceChildren(...Array.from(renderRoot.childNodes));
-            await nextTick();
-            queueFitPages();
-        } catch (error) {
-            if (currentRender !== renderSequence) {
-                return;
-            }
-
-            container.replaceChildren();
-            emit("error", error);
-        }
+    () => props.src,
+    (source) => {
+        if (source) render(source);
     },
-    { immediate: true, flush: "post" },
 );
+
+onMounted(() => {
+    if (props.src) render(props.src);
+});
+
+watch(currentTheme, () => {
+    if (props.src) render(props.src);
+});
 
 onBeforeUnmount(() => {
     renderSequence += 1;
-
-    if (fitFrame) {
-        cancelAnimationFrame(fitFrame);
-        fitFrame = 0;
-    }
-
-    host.value?.replaceChildren();
+    viewer?.destroy();
+    viewer = null;
 });
 </script>
 
@@ -160,41 +109,6 @@ onBeforeUnmount(() => {
     min-width: 0;
     min-height: 0;
     height: 100%;
-    overflow: auto;
-    background: var(--bg-word-preview);
-    color: var(--text-heading);
-}
-
-.word-preview :deep(.docx-wrapper) {
-    --docx-page-scale: 1;
-    min-width: 100%;
-    min-height: 100%;
-    padding: 28px;
-    background: var(--bg-word-preview);
-}
-
-.word-preview :deep(.docx-wrapper > section.docx) {
-    margin-right: auto !important;
-    margin-left: auto !important;
-    box-shadow: var(--shadow-page);
-    zoom: var(--docx-page-scale);
-}
-
-.word-preview :deep(.docx-wrapper > section.docx:not(:last-child)) {
-    margin-bottom: max(18px, calc(28px * var(--docx-page-scale))) !important;
-}
-
-.word-preview :deep(.docx-wrapper img) {
-    max-width: 100%;
-}
-
-@media (max-width: 768px) {
-    .word-preview {
-        min-height: 360px;
-    }
-
-    .word-preview :deep(.docx-wrapper) {
-        padding: 16px;
-    }
+    overflow: hidden;
 }
 </style>

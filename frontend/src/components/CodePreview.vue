@@ -72,6 +72,26 @@
                     </option>
                 </select>
             </label>
+            <label class="code-preview-writable">
+                <span>只读</span>
+                <span
+                    class="code-preview-switch"
+                    :class="{ 'code-preview-switch--on': readonly }"
+                >
+                    <input
+                        type="checkbox"
+                        class="code-preview-switch__input"
+                        role="switch"
+                        :checked="readonly"
+                        :disabled="encodingLoading || syncingDocument"
+                        @change="handleReadonlyChange"
+                        @keydown.space.prevent
+                    />
+                    <span class="code-preview-switch__track">
+                        <span class="code-preview-switch__thumb"></span>
+                    </span>
+                </span>
+            </label>
             <button
                 v-if="showPreviewIcon"
                 class="code-preview-action"
@@ -199,6 +219,8 @@ const encodingOptions = [
 ];
 const selectedEncoding = ref(normalizeEncoding(props.encoding));
 const syncingDocument = ref(false);
+// 编辑器只读开关，默认关闭；开启后编辑器变为只读。
+const readonly = ref(false);
 const isStandaloneWebPreviewFile = computed(() =>
     isStandaloneWebFile(props.extension),
 );
@@ -343,12 +365,32 @@ watch(
 
 watch(
     () => props.encodingLoading,
-    (loading) => {
-        editor?.dispatch({
-            effects: editable.reconfigure(EditorView.editable.of(!loading)),
-        });
+    () => {
+        applyEditableState();
     },
 );
+
+// 切换只读开关：更新状态并重新配置编辑器可编辑性。
+function handleReadonlyChange(event) {
+    if (props.encodingLoading || syncingDocument.value) {
+        return;
+    }
+    readonly.value = event.target.checked;
+    applyEditableState();
+}
+
+// 编辑器最终可编辑状态：仅当未开启只读且未在加载编码时可写。
+function isEditorEditable() {
+    return !readonly.value && !props.encodingLoading;
+}
+
+function applyEditableState() {
+    editor?.dispatch({
+        effects: editable.reconfigure(
+            EditorView.editable.of(isEditorEditable()),
+        ),
+    });
+}
 
 watch(
     [() => props.contentVersion, () => props.extension, () => props.name, host],
@@ -379,7 +421,7 @@ watch(
                             },
                         ]),
                         EditorView.lineWrapping,
-                        editable.of(EditorView.editable.of(!props.encodingLoading)),
+                        editable.of(EditorView.editable.of(isEditorEditable())),
                         EditorView.updateListener.of((update) => {
                             if (!update.docChanged || syncingFromProps) {
                                 return;
@@ -493,7 +535,7 @@ async function replaceEditorContent(content) {
             syncingDocument.value = false;
             editor?.dispatch({
                 effects: editable.reconfigure(
-                    EditorView.editable.of(!props.encodingLoading),
+                    EditorView.editable.of(isEditorEditable()),
                 ),
             });
         }
@@ -727,6 +769,70 @@ async function configureLanguage() {
 .code-preview-encoding-select:disabled {
     cursor: not-allowed;
     opacity: 0.6;
+}
+
+.code-preview-writable {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.code-preview-switch {
+    position: relative;
+    display: inline-flex;
+    width: 28px;
+    height: 16px;
+}
+
+.code-preview-switch__input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.code-preview-switch__track {
+    flex: 1;
+    border-radius: 999px;
+    background: var(--border-cell);
+    transition: background 0.15s ease;
+}
+
+.code-preview-switch__thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--bg-surface);
+    transition: transform 0.15s ease;
+}
+
+.code-preview-switch--on .code-preview-switch__track {
+    background: var(--accent-primary);
+}
+
+.code-preview-switch--on .code-preview-switch__thumb {
+    transform: translateX(12px);
+}
+
+.code-preview-switch__input:disabled {
+    cursor: not-allowed;
+}
+
+.code-preview-switch__input:disabled ~ .code-preview-switch__track {
+    opacity: 0.6;
+}
+
+.code-preview-switch__input:focus-visible ~ .code-preview-switch__track {
+    outline: 1px solid var(--accent-primary);
+    outline-offset: 2px;
 }
 
 .code-preview-action {

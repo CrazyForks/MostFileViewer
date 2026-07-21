@@ -154,6 +154,7 @@
                             @encoding-change="handleEncodingChange"
                             @save-tab="handleSaveTab"
                             @open-in-new-tab="handleOpenInNewTab"
+                            @reorder-tab="handleReorderTab"
                         />
                     </div>
                 </section>
@@ -816,6 +817,29 @@ async function handleShowInFileManager(node) {
 
 function handleChangeTab(path) {
     activeTabPath.value = path;
+    schedulePersistWorkspaceSession();
+}
+
+// 拖拽调整 tab 顺序：将 fromPath 移动到 toPath 的左/右侧。
+// 不改变 activeTabPath，保持当前激活预览不变；重新排序后触发会话持久化，
+// 重启后普通 tab 顺序会被恢复（error / previewOnly tab 依旧被现有持久化逻辑过滤）。
+function handleReorderTab({ fromPath, toPath, after }) {
+    const tabs = openTabs.value;
+    const fromIndex = tabs.findIndex((t) => t.path === fromPath);
+    let toIndex = tabs.findIndex((t) => t.path === toPath);
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+        return;
+    }
+
+    const next = [...tabs];
+    const [moved] = next.splice(fromIndex, 1);
+
+    // 移除源项后目标索引可能变化，重新定位一次。
+    toIndex = next.findIndex((t) => t.path === toPath);
+    const insertIndex = after ? toIndex + 1 : toIndex;
+    next.splice(insertIndex, 0, moved);
+
+    openTabs.value = next;
     schedulePersistWorkspaceSession();
 }
 

@@ -444,6 +444,8 @@ input {
 .preview-tabs__lay .layui-tab-title li {
     line-height: var(--tab-height);
     padding: 0 var(--tab-padding-x);
+    /* 作为拖拽落点指示线（伪元素 absolute）的定位基准，使指示线贴到 tab 签左右最外侧 */
+    position: relative;
 }
 
 .preview-tabs__lay .layui-tab-title li.layui-this {
@@ -456,6 +458,32 @@ input {
     align-items: center;
     gap: 3px;
     max-width: 150px;
+}
+
+.preview-tabs__title--dragging {
+    opacity: 0.5;
+}
+
+/* 指示线定位到 li（tab 签）的最外侧：伪元素向上冒出到最近的 position:relative 祖先——
+   即 .preview-tabs__lay .layui-tab-title li（已设置 position: relative）。 */
+.preview-tabs__title--drag-over-left::before,
+.preview-tabs__title--drag-over-right::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: var(--drag-indicator-width, 2px);
+    background: var(--accent-hover, #16a34a);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.preview-tabs__title--drag-over-left::before {
+    left: var(--drag-indicator-left, 0px);
+}
+
+.preview-tabs__title--drag-over-right::after {
+    right: var(--drag-indicator-right, 0px);
 }
 
 .preview-tabs__title-text {

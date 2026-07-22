@@ -1,5 +1,9 @@
 <template>
-    <div ref="host" class="word-preview"></div>
+    <div
+        ref="host"
+        class="word-preview"
+        @wheel.capture="handleWheel"
+    ></div>
 </template>
 
 <script setup>
@@ -21,9 +25,16 @@ const props = defineProps({
 
 const emit = defineEmits(["error"]);
 
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 4;
+const WHEEL_ZOOM_DISTANCE = 1000;
+
 const host = ref(null);
 let viewer = null;
 let renderSequence = 0;
+let zoomFrame = 0;
+let pendingZoomDelta = 0;
+let zoomAnchor = null;
 
 const { currentTheme } = useTheme();
 
@@ -34,9 +45,166 @@ function getThemeBackground() {
     return value || "#f0f0f0";
 }
 
+function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+}
+
+function getScrollHost() {
+    return host.value?.firstElementChild?.firstElementChild ?? null;
+}
+
+function getPageWrapper(element, scrollHost) {
+    let current = element;
+
+    while (current && current.parentElement !== scrollHost) {
+        current = current.parentElement;
+    }
+
+    if (!current || current === scrollHost?.firstElementChild) {
+        return null;
+    }
+
+    return current;
+}
+
+function captureZoomAnchor(event) {
+    const scrollHost = getScrollHost();
+
+    if (!scrollHost) {
+        return null;
+    }
+
+    const rect = scrollHost.getBoundingClientRect();
+    const viewportX = clamp(event.clientX - rect.left, 0, rect.width);
+    const viewportY = clamp(event.clientY - rect.top, 0, rect.height);
+    const page = getPageWrapper(
+        document.elementFromPoint(event.clientX, event.clientY),
+        scrollHost,
+    );
+    const pageRect = page?.getBoundingClientRect();
+
+    return {
+        scrollHost,
+        viewportX,
+        viewportY,
+        page,
+        pageX: pageRect?.width
+            ? clamp((event.clientX - pageRect.left) / pageRect.width, 0, 1)
+            : 0,
+        pageY: pageRect?.height
+            ? clamp((event.clientY - pageRect.top) / pageRect.height, 0, 1)
+            : 0,
+        contentX: scrollHost.scrollLeft + viewportX,
+        contentY: scrollHost.scrollTop + viewportY,
+    };
+}
+
+function restoreZoomAnchor(anchor, previousScale, nextScale) {
+    const scrollHost = anchor?.scrollHost;
+
+    if (!scrollHost?.isConnected) {
+        return;
+    }
+
+    const page = anchor.page;
+    const pageIsMounted = page?.isConnected && page.parentElement === scrollHost;
+    const scaleRatio = previousScale > 0 ? nextScale / previousScale : 1;
+    const contentX = pageIsMounted
+        ? page.offsetLeft + page.offsetWidth * anchor.pageX
+        : anchor.contentX * scaleRatio;
+    const contentY = pageIsMounted
+        ? page.offsetTop + page.offsetHeight * anchor.pageY
+        : anchor.contentY * scaleRatio;
+    const maxScrollLeft = Math.max(
+        0,
+        scrollHost.scrollWidth - scrollHost.clientWidth,
+    );
+    const maxScrollTop = Math.max(
+        0,
+        scrollHost.scrollHeight - scrollHost.clientHeight,
+    );
+
+    scrollHost.scrollLeft = clamp(
+        contentX - anchor.viewportX,
+        0,
+        maxScrollLeft,
+    );
+    scrollHost.scrollTop = clamp(
+        contentY - anchor.viewportY,
+        0,
+        maxScrollTop,
+    );
+}
+
+function cancelZoomAnimation() {
+    if (zoomFrame) {
+        cancelAnimationFrame(zoomFrame);
+        zoomFrame = 0;
+    }
+
+    pendingZoomDelta = 0;
+    zoomAnchor = null;
+}
+
+function scheduleZoomFrame() {
+    if (!zoomFrame) {
+        zoomFrame = requestAnimationFrame(applyPendingZoom);
+    }
+}
+
+function applyPendingZoom() {
+    zoomFrame = 0;
+
+    if (!viewer || pendingZoomDelta === 0) {
+        return;
+    }
+
+    const currentScale = viewer.getScale();
+    const delta = pendingZoomDelta;
+    const anchor = zoomAnchor;
+
+    pendingZoomDelta = 0;
+    zoomAnchor = null;
+
+    const nextScale = clamp(
+        currentScale - delta / WHEEL_ZOOM_DISTANCE,
+        MIN_ZOOM,
+        MAX_ZOOM,
+    );
+
+    viewer.setScale(nextScale);
+    restoreZoomAnchor(anchor, currentScale, nextScale);
+}
+
+function getWheelDelta(event) {
+    if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+        return event.deltaY * 16;
+    }
+
+    if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+        return event.deltaY * (getScrollHost()?.clientHeight || 800);
+    }
+
+    return event.deltaY;
+}
+
+function handleWheel(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.deltaY === 0 || !viewer) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    pendingZoomDelta += getWheelDelta(event);
+    zoomAnchor = captureZoomAnchor(event) ?? zoomAnchor;
+    scheduleZoomFrame();
+}
+
 async function render(source) {
     const currentRender = ++renderSequence;
 
+    cancelZoomAnimation();
     viewer?.destroy();
     viewer = null;
 
@@ -59,7 +227,9 @@ async function render(source) {
             gap: 24,
             paddingTop: 28,
             enableTextSelection: true,
-            enableZoom: true,
+            enableZoom: false,
+            zoomMin: MIN_ZOOM,
+            zoomMax: MAX_ZOOM,
             wasmUrl: getOfficeWasmUrl("word"),
             workerTimeoutMs: OFFICE_WORKER_TIMEOUT_MS,
             onError: (err) => emit("error", normalizeOfficePreviewError(err)),
@@ -98,6 +268,7 @@ watch(currentTheme, () => {
 
 onBeforeUnmount(() => {
     renderSequence += 1;
+    cancelZoomAnimation();
     viewer?.destroy();
     viewer = null;
 });

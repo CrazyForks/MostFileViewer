@@ -152,19 +152,19 @@
     --cm-search-button-hover-bg: var(--bg-hover-accent);
     --cm-search-button-hover-border: var(--border-input);
     --cm-search-label-checkbox-text: var(--text-secondary);
-    --cm-syntax-comment: #8a929e;
-    --cm-syntax-keyword: #d6336c;
-    --cm-syntax-string: #0f9d58;
-    --cm-syntax-constant: #e8590c;
-    --cm-syntax-variable: #1f2937;
-    --cm-syntax-function: #7048e8;
-    --cm-syntax-type: #0b7285;
-    --cm-syntax-operator: #495057;
-    --cm-syntax-special: #d9480f;
+    --cm-syntax-comment: #667085;
+    --cm-syntax-keyword: #c2185b;
+    --cm-syntax-string: #087f5b;
+    --cm-syntax-constant: #d94801;
+    --cm-syntax-variable: #172033;
+    --cm-syntax-function: #155eef;
+    --cm-syntax-type: #087f8c;
+    --cm-syntax-operator: #344054;
+    --cm-syntax-special: #c92a2a;
     --cm-syntax-meta: #862e9c;
-    --cm-syntax-heading: #1971c2;
-    --cm-syntax-link: #1c7ed6;
-    --cm-syntax-invalid: #e03131;
+    --cm-syntax-heading: #b54708;
+    --cm-syntax-link: #0969da;
+    --cm-syntax-invalid: #dc2626;
 
     /* ================================================================
      * Markdown 预览专用变量

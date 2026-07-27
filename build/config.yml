@@ -11,7 +11,7 @@ info:
   description: "万能预览器"
   copyright: "(c) 2025, WangXiaohui"
   comments: "万能预览器"
-  version: "0.0.1"
+  version: "0.5.0"
 
 # Dev mode configuration
 dev_mode:

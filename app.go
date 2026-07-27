@@ -54,6 +54,17 @@ type FileTreeNode struct {
 	Children  []FileTreeNode `json:"children,omitempty"`
 }
 
+type FileInfo struct {
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Size      int64  `json:"size"`
+	IsDir     bool   `json:"isDir"`
+	Extension string `json:"extension"`
+	ModTime   string `json:"modTime"`
+	Mode      string `json:"mode"`
+	IsSymlink bool   `json:"isSymlink"`
+}
+
 type FileContent struct {
 	Name      string `json:"name"`
 	Path      string `json:"path"`
@@ -433,6 +444,38 @@ func (a *App) ShowInFileManager(ctx context.Context, path string) error {
 		return fmt.Errorf("在文件管理器中显示失败: %w", err)
 	}
 	return nil
+}
+
+func (a *App) GetFileInfo(ctx context.Context, path string) (*FileInfo, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("文件路径不能为空")
+	}
+
+	cleanPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("解析文件路径失败: %w", err)
+	}
+
+	info, err := os.Stat(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("文件不存在或无法访问: %w", err)
+	}
+
+	isSymlink := false
+	if lstat, err := os.Lstat(cleanPath); err == nil {
+		isSymlink = lstat.Mode()&os.ModeSymlink != 0
+	}
+
+	return &FileInfo{
+		Name:      info.Name(),
+		Path:      cleanPath,
+		Size:      info.Size(),
+		IsDir:     info.IsDir(),
+		Extension: strings.ToLower(filepath.Ext(info.Name())),
+		ModTime:   info.ModTime().Format("2006-01-02 15:04:05"),
+		Mode:      info.Mode().String(),
+		IsSymlink: isSymlink,
+	}, nil
 }
 
 func (a *App) validateFilePath(ctx context.Context, path string) (string, os.FileInfo, error) {

@@ -26,13 +26,30 @@
       >
         打开所在位置
       </button>
+      <div class="menu-divider"></div>
+      <button
+        type="button"
+        class="menu-item"
+        @click="handleFileInfo"
+      >
+        文件信息
+      </button>
     </div>
+    <FileInfoDialog
+      :visible="fileInfoDialogVisible"
+      :info="fileInfoData"
+      :loading="fileInfoLoading"
+      :error="fileInfoError"
+      @close="closeFileInfoDialog"
+    />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref } from 'vue';
 import FileTreeNode from './FileTreeNode.vue';
+import FileInfoDialog from './FileInfoDialog.vue';
+import { App } from '../../bindings/MostFileViewer';
 
 defineProps({
   nodes: {
@@ -63,6 +80,11 @@ const contextMenuStyle = computed(() => ({
   top: `${contextMenu.y}px`
 }));
 
+const fileInfoDialogVisible = ref(false);
+const fileInfoData = ref(null);
+const fileInfoLoading = ref(false);
+const fileInfoError = ref('');
+
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeContextMenu);
 });
@@ -89,6 +111,34 @@ function handleShowInFileManager() {
 
   emit('show-in-file-manager', contextMenu.node);
   closeContextMenu();
+}
+
+async function handleFileInfo() {
+  const node = contextMenu.node;
+  if (!node) {
+    return;
+  }
+
+  closeContextMenu();
+  fileInfoDialogVisible.value = true;
+  fileInfoLoading.value = true;
+  fileInfoData.value = null;
+  fileInfoError.value = '';
+
+  try {
+    const info = await App.GetFileInfo(node.path);
+    fileInfoData.value = info;
+  } catch (error) {
+    fileInfoError.value = error.message || '获取文件信息失败';
+  } finally {
+    fileInfoLoading.value = false;
+  }
+}
+
+function closeFileInfoDialog() {
+  fileInfoDialogVisible.value = false;
+  fileInfoData.value = null;
+  fileInfoError.value = '';
 }
 </script>
 

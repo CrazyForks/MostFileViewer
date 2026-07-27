@@ -26,6 +26,7 @@ coverage.out
 # Local binaries / generated executables
 /bin/
 MostFileViewer
+/.claude/
 
 # Wails / app build output
 /build/

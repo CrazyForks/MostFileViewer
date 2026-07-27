@@ -24,7 +24,7 @@
         class="menu-item"
         @click="handleShowInFileManager"
       >
-        在文件管理器中显示
+        打开所在位置
       </button>
     </div>
   </div>

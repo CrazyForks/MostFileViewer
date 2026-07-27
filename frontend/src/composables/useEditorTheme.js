@@ -254,4 +254,38 @@ export const editorTheme = EditorView.theme({
     ".cm-button": {
         font: "inherit",
     },
+
+    /* ---- 折叠装订线 ---- */
+    ".cm-foldGutter .cm-gutterElement": {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        color: "var(--text-disabled)",
+        fontSize: "10px",
+        userSelect: "none",
+    },
+    ".cm-foldGutter .cm-gutterElement:hover": {
+        color: "var(--accent-primary)",
+    },
+    /* 折叠占位符（内容被折叠后显示的 `⋯` 区域） */
+    ".cm-foldPlaceholder": {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: "24px",
+        height: "16px",
+        padding: "0 6px",
+        margin: "0 4px",
+        borderRadius: "3px",
+        backgroundColor: "var(--bg-active)",
+        color: "var(--text-muted)",
+        fontSize: "11px",
+        cursor: "pointer",
+        userSelect: "none",
+    },
+    ".cm-foldPlaceholder:hover": {
+        backgroundColor: "var(--bg-hover)",
+        color: "var(--accent-primary)",
+    },
 });

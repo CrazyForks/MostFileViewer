@@ -72,7 +72,7 @@
                     </option>
                 </select>
             </label>
-            <label class="code-preview-writable">
+            <label v-if="selectedSyntax !== 'json'" class="code-preview-writable">
                 <span>只读</span>
                 <span
                     class="code-preview-switch"
@@ -92,6 +92,72 @@
                     </span>
                 </span>
             </label>
+            <span class="code-preview-spacer"></span>
+            <template v-if="selectedSyntax === 'json'">
+                <span
+                    v-if="jsonError"
+                    class="code-preview-json-error"
+                    :title="jsonError"
+                    >{{ jsonError }}</span
+                >
+                <button
+                    class="code-preview-action code-preview-action--json"
+                    type="button"
+                    title="格式化 JSON"
+                    :disabled="syncingDocument"
+                    @click="handleFormatJson"
+                >
+                    <svg
+                        class="code-preview-action__icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <path
+                            d="M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4Zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4Z"
+                            fill="currentColor"
+                        />
+                    </svg>
+                </button>
+                <button
+                    class="code-preview-action code-preview-action--json"
+                    type="button"
+                    title="压缩 JSON"
+                    :disabled="syncingDocument"
+                    @click="handleCompressJson"
+                >
+                    <svg
+                        class="code-preview-action__icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <path
+                            d="M8 19h3v3h2v-3h3l-4-4-4 4Zm8-14h-3V2h-2v3H8l4 4 4-4ZM4 11v2h16v-2H4Z"
+                            fill="currentColor"
+                        />
+                    </svg>
+                </button>
+                <button
+                    class="code-preview-action code-preview-action--json"
+                    type="button"
+                    title="展开全部"
+                    :disabled="syncingDocument"
+                    @click="handleUnfoldAll"
+                >
+                    <svg
+                        class="code-preview-action__icon"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                        focusable="false"
+                    >
+                        <path
+                            d="M12 19 8 13h8l-4 6Zm0-14 4 6H8l4-6Z"
+                            fill="currentColor"
+                        />
+                    </svg>
+                </button>
+            </template>
             <button
                 v-if="showPreviewIcon"
                 class="code-preview-action"
@@ -147,7 +213,10 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { keymap } from "@codemirror/view";
 import { basicSetup, EditorView } from "codemirror";
 import { EditorState, Compartment } from "@codemirror/state";
-import { syntaxHighlighting } from "@codemirror/language";
+import {
+    syntaxHighlighting,
+    unfoldAll,
+} from "@codemirror/language";
 import {
     search,
     searchKeymap,
@@ -221,6 +290,8 @@ const selectedEncoding = ref(normalizeEncoding(props.encoding));
 const syncingDocument = ref(false);
 // 编辑器只读开关，默认关闭；开启后编辑器变为只读。
 const readonly = ref(false);
+// JSON 格式化/压缩解析失败时的错误提示，仅在 JSON 语法下显示。
+const jsonError = ref("");
 const isStandaloneWebPreviewFile = computed(() =>
     isStandaloneWebFile(props.extension),
 );
@@ -377,6 +448,82 @@ function handleReadonlyChange(event) {
     }
     readonly.value = event.target.checked;
     applyEditableState();
+}
+
+const JSON_ERROR_DISPLAY_MS = 4000;
+
+/**
+ * 格式化 JSON：将编辑器内容解析后重新缩进，覆盖编辑器文档。
+ * 解析失败时在状态栏短暂显示错误提示。
+ */
+function handleFormatJson() {
+    if (syncingDocument.value || !editor) {
+        return;
+    }
+    try {
+        const content = getContent();
+        const parsed = JSON.parse(content);
+        const formatted = JSON.stringify(parsed, null, 2);
+        if (formatted === content) {
+            return;
+        }
+        syncingFromProps = true;
+        editor.dispatch({
+            changes: {
+                from: 0,
+                to: editor.state.doc.length,
+                insert: formatted,
+            },
+        });
+        syncingFromProps = false;
+        jsonError.value = "";
+        emit("dirty");
+    } catch (e) {
+        jsonError.value = `JSON 格式错误: ${e.message}`;
+        setTimeout(() => {
+            jsonError.value = "";
+        }, JSON_ERROR_DISPLAY_MS);
+    }
+}
+
+/**
+ * 压缩 JSON：将编辑器内容解析后移除多余空白，覆盖编辑器文档。
+ * 解析失败时在状态栏短暂显示错误提示。
+ */
+function handleCompressJson() {
+    if (syncingDocument.value || !editor) {
+        return;
+    }
+    try {
+        const content = getContent();
+        const parsed = JSON.parse(content);
+        const compressed = JSON.stringify(parsed);
+        if (compressed === content) {
+            return;
+        }
+        syncingFromProps = true;
+        editor.dispatch({
+            changes: {
+                from: 0,
+                to: editor.state.doc.length,
+                insert: compressed,
+            },
+        });
+        syncingFromProps = false;
+        jsonError.value = "";
+        emit("dirty");
+    } catch (e) {
+        jsonError.value = `JSON 格式错误: ${e.message}`;
+        setTimeout(() => {
+            jsonError.value = "";
+        }, JSON_ERROR_DISPLAY_MS);
+    }
+}
+
+/** 展开全部对象/数组 */
+function handleUnfoldAll() {
+    if (!editor) return;
+    unfoldAll(editor);
 }
 
 // 编辑器最终可编辑状态：仅当未开启只读且未在加载编码时可写。
@@ -579,6 +726,11 @@ function handleSyntaxChange(event) {
     }
 
     selectedSyntax.value = event.target.value;
+    // 切到 JSON 时自动关闭只读，确保格式化/压缩等操作可用
+    if (event.target.value === "json" && readonly.value) {
+        readonly.value = false;
+        applyEditableState();
+    }
     documentSyncToken += 1;
     void configureLanguage();
 }
@@ -737,7 +889,7 @@ async function configureLanguage() {
     color: var(--text-muted);
     display: flex;
     align-items: center;
-    column-gap: 20px;
+    column-gap: 4px;
 }
 
 .code-preview-encoding {
@@ -779,6 +931,15 @@ async function configureLanguage() {
     font-size: 12px;
     cursor: pointer;
     user-select: none;
+}
+
+.code-preview-json-error {
+    max-width: 320px;
+    overflow: hidden;
+    color: var(--status-error-text);
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .code-preview-switch {
@@ -849,11 +1010,12 @@ async function configureLanguage() {
     cursor: pointer;
 }
 
-/* 预览按钮组从状态栏最右侧起排布 */
-.code-preview-action:not(.code-preview-action--new-tab) {
-    margin-left: auto;
+/* 占位弹簧：把其后的按钮组整体推到状态栏右侧 */
+.code-preview-spacer {
+    flex: 1 1 auto;
 }
 
+/* 预览/新标签按钮紧随其后排布，不再各自 auto margin */
 .code-preview-action--new-tab {
     margin-left: 2px;
 }

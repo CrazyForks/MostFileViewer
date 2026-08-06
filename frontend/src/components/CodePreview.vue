@@ -138,25 +138,6 @@
                         />
                     </svg>
                 </button>
-                <button
-                    class="code-preview-action code-preview-action--json"
-                    type="button"
-                    title="展开全部"
-                    :disabled="syncingDocument"
-                    @click="handleUnfoldAll"
-                >
-                    <svg
-                        class="code-preview-action__icon"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                        focusable="false"
-                    >
-                        <path
-                            d="M12 19 8 13h8l-4 6Zm0-14 4 6H8l4-6Z"
-                            fill="currentColor"
-                        />
-                    </svg>
-                </button>
             </template>
             <button
                 v-if="showPreviewIcon"
@@ -213,10 +194,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { keymap } from "@codemirror/view";
 import { basicSetup, EditorView } from "codemirror";
 import { EditorState, Compartment } from "@codemirror/state";
-import {
-    syntaxHighlighting,
-    unfoldAll,
-} from "@codemirror/language";
+import { syntaxHighlighting } from "@codemirror/language";
 import {
     search,
     searchKeymap,
@@ -518,12 +496,6 @@ function handleCompressJson() {
             jsonError.value = "";
         }, JSON_ERROR_DISPLAY_MS);
     }
-}
-
-/** 展开全部对象/数组 */
-function handleUnfoldAll() {
-    if (!editor) return;
-    unfoldAll(editor);
 }
 
 // 编辑器最终可编辑状态：仅当未开启只读且未在加载编码时可写。

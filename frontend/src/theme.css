@@ -152,19 +152,20 @@
     --cm-search-button-hover-bg: var(--bg-hover-accent);
     --cm-search-button-hover-border: var(--border-input);
     --cm-search-label-checkbox-text: var(--text-secondary);
-    --cm-syntax-comment: #667085;
-    --cm-syntax-keyword: #c2185b;
-    --cm-syntax-string: #087f5b;
-    --cm-syntax-constant: #d94801;
-    --cm-syntax-variable: #172033;
-    --cm-syntax-function: #155eef;
-    --cm-syntax-type: #087f8c;
-    --cm-syntax-operator: #344054;
-    --cm-syntax-special: #c92a2a;
-    --cm-syntax-meta: #862e9c;
-    --cm-syntax-heading: #b54708;
-    --cm-syntax-link: #0969da;
-    --cm-syntax-invalid: #dc2626;
+    /* IntelliJ Light inspired syntax palette. */
+    --cm-syntax-comment: #8c8c8c;
+    --cm-syntax-keyword: #0033b3;
+    --cm-syntax-string: #067d17;
+    --cm-syntax-constant: #1750eb;
+    --cm-syntax-variable: #871094;
+    --cm-syntax-function: #00627a;
+    --cm-syntax-type: #000000;
+    --cm-syntax-operator: #000000;
+    --cm-syntax-special: #0037a6;
+    --cm-syntax-meta: #9e880d;
+    --cm-syntax-heading: #000080;
+    --cm-syntax-link: #0000ff;
+    --cm-syntax-invalid: #bc3f3c;
 
     /* ================================================================
      * Markdown 预览专用变量

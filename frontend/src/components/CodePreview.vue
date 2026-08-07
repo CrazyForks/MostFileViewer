@@ -40,38 +40,117 @@
             </section>
         </div>
         <div class="code-preview-status">
-            <label class="code-preview-encoding">
-                <select
-                    :value="selectedSyntax"
-                    class="code-preview-encoding-select"
+            <div
+                class="code-preview-dropdown"
+                @mousedown.stop
+            >
+                <button
+                    type="button"
+                    class="code-preview-dropdown__btn"
                     :disabled="encodingLoading || syncingDocument"
-                    @change="handleSyntaxChange"
+                    :title="currentSyntaxLabel"
+                    :aria-label="`文件格式：${currentSyntaxLabel}`"
+                    @click="toggleSyntaxMenu"
                 >
-                    <option
+                    <span class="code-preview-dropdown__label"
+                        >{{ currentSyntaxLabel }}</span
+                    >
+                </button>
+                <div
+                    v-if="syntaxMenuOpen"
+                    class="menu-panel code-preview-dropdown__panel"
+                    role="menu"
+                >
+                    <button
                         v-for="syntax in syntaxOptions"
                         :key="syntax.value"
-                        :value="syntax.value"
+                        type="button"
+                        class="menu-item code-preview-dropdown__item"
+                        :class="{
+                            'code-preview-dropdown__item--active':
+                                syntax.value === selectedSyntax,
+                        }"
+                        role="menuitemradio"
+                        :aria-checked="syntax.value === selectedSyntax"
+                        @click="handleSyntaxSelect(syntax.value)"
                     >
-                        {{ syntax.label }}
-                    </option>
-                </select>
-            </label>
-            <label class="code-preview-encoding">
-                <select
-                    :value="selectedEncoding"
-                    class="code-preview-encoding-select"
+                        <span class="code-preview-dropdown__item-label">{{
+                            syntax.label
+                        }}</span>
+                        <span
+                            v-if="syntax.value === selectedSyntax"
+                            class="code-preview-dropdown__item-check"
+                            aria-hidden="true"
+                            >✓</span
+                        >
+                    </button>
+                </div>
+            </div>
+            <div
+                class="code-preview-dropdown"
+                @mousedown.stop
+            >
+                <button
+                    type="button"
+                    class="code-preview-dropdown__btn"
                     :disabled="encodingLoading || syncingDocument"
-                    @change="handleEncodingChange"
+                    :title="currentEncodingLabel"
+                    :aria-label="`编码：${currentEncodingLabel}`"
+                    @click="toggleEncodingMenu"
                 >
-                    <option
+                    <span class="code-preview-dropdown__label"
+                        >{{ currentEncodingLabel }}</span
+                    >
+                </button>
+                <div
+                    v-if="encodingMenuOpen"
+                    class="menu-panel code-preview-dropdown__panel"
+                    role="menu"
+                >
+                    <button
                         v-for="encoding in encodingOptions"
                         :key="encoding.value"
-                        :value="encoding.value"
+                        type="button"
+                        class="menu-item code-preview-dropdown__item"
+                        :class="{
+                            'code-preview-dropdown__item--active':
+                                encoding.value === selectedEncoding,
+                        }"
+                        role="menuitemradio"
+                        :aria-checked="encoding.value === selectedEncoding"
+                        @click="handleEncodingSelect(encoding.value)"
                     >
-                        {{ encoding.label }}
-                    </option>
-                </select>
-            </label>
+                        <span class="code-preview-dropdown__item-label">{{
+                            encoding.label
+                        }}</span>
+                        <span
+                            v-if="encoding.value === selectedEncoding"
+                            class="code-preview-dropdown__item-check"
+                            aria-hidden="true"
+                            >✓</span
+                        >
+                    </button>
+                </div>
+            </div>
+            <button
+                type="button"
+                class="code-preview-fontsize"
+                :class="{
+                    'code-preview-fontsize--default':
+                        fontSize === defaultFontSize,
+                }"
+                :title="
+                    fontSize === defaultFontSize
+                        ? `当前字号 ${fontSize}px（默认；Ctrl+滚轮调节）`
+                        : `当前 ${fontSize}px，点击恢复默认 ${defaultFontSize}px（Ctrl+滚轮调节）`
+                "
+                :aria-label="`字号 ${fontSize}px${
+                    fontSize === defaultFontSize ? '' : '，点击重置'
+                }`"
+                @click="handleFontSizeResetClick"
+            >
+                {{ fontSize }}px
+            </button>
             <label v-if="selectedSyntax !== 'json'" class="code-preview-writable">
                 <span>只读</span>
                 <span
@@ -190,7 +269,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+} from "vue";
 import { keymap } from "@codemirror/view";
 import { basicSetup, EditorView } from "codemirror";
 import { EditorState, Compartment } from "@codemirror/state";
@@ -204,6 +290,7 @@ import { renderMarkdown } from "../composables/useMarkdown.js";
 import { renderMermaidDiagrams } from "../composables/useMermaid.js";
 import { createScrollSync } from "../composables/useScrollSync.js";
 import { useTheme } from "../composables/useTheme.js";
+import { useFontSize } from "../composables/useFontSize.js";
 import {
     syntaxOptions,
     detectSyntaxKey,
@@ -255,6 +342,65 @@ const emit = defineEmits([
 
 const selectedSyntax = ref(detectSyntaxKey(props.extension, props.name));
 
+// 文件格式 / 编码下拉菜单的展开状态。两者互斥，开启其中一个时关闭另一个。
+const syntaxMenuOpen = ref(false);
+const encodingMenuOpen = ref(false);
+
+const currentSyntaxLabel = computed(() => {
+    const match = syntaxOptions.find(
+        (option) => option.value === selectedSyntax.value,
+    );
+    return match ? match.label : selectedSyntax.value;
+});
+
+const currentEncodingLabel = computed(() => {
+    const match = encodingOptions.find(
+        (option) => option.value === selectedEncoding.value,
+    );
+    return match ? match.label : selectedEncoding.value;
+});
+
+function toggleSyntaxMenu() {
+    if (props.encodingLoading || syncingDocument.value) {
+        return;
+    }
+    syntaxMenuOpen.value = !syntaxMenuOpen.value;
+    if (syntaxMenuOpen.value) {
+        encodingMenuOpen.value = false;
+    }
+}
+
+function toggleEncodingMenu() {
+    if (props.encodingLoading || syncingDocument.value) {
+        return;
+    }
+    encodingMenuOpen.value = !encodingMenuOpen.value;
+    if (encodingMenuOpen.value) {
+        syntaxMenuOpen.value = false;
+    }
+}
+
+function closeAllMenus() {
+    syntaxMenuOpen.value = false;
+    encodingMenuOpen.value = false;
+}
+
+function handleSyntaxSelect(value) {
+    syntaxMenuOpen.value = false;
+    if (value === selectedSyntax.value) {
+        return;
+    }
+    handleSyntaxChange({ target: { value } });
+}
+
+function handleEncodingSelect(value) {
+    encodingMenuOpen.value = false;
+    if (value === selectedEncoding.value) {
+        return;
+    }
+    handleEncodingChange({ target: { value } });
+}
+
 const encodingOptions = [
     { label: "UTF-8", value: "utf-8" },
     { label: "GBK", value: "gbk" },
@@ -303,9 +449,11 @@ let languageLoadToken = 0;
 // 编辑时实时刷新 Markdown 预览的防抖定时器，避免逐字符渲染带来的性能开销。
 let markdownLivePreviewTimer = null;
 const MARKDOWN_LIVE_PREVIEW_DELAY = 120;
+let markdownRenderToken = 0;
 let lastContentVersion = null;
 let lastExtension = "";
 let lastName = "";
+let releaseResizeScrollSync = null;
 
 // 预览面板拖拽调宽控制器；拖拽结束后重建 Markdown 滚动同步锚点。
 const {
@@ -315,7 +463,18 @@ const {
     handleResizeStart: handleWebPreviewResizeStart,
     stop: stopWebPreviewResize,
 } = createWebPreviewResizer(() => previewBody.value, {
-    onResizeEnd: refreshMarkdownScrollSync,
+    onResizeStart: () => {
+        releaseResizeScrollSync?.();
+        releaseResizeScrollSync = scrollSync.suspend();
+    },
+    onResizeEnd: () => {
+        releaseResizeScrollSync?.();
+        releaseResizeScrollSync = null;
+        if (isMarkdownPreviewFile.value && webPreviewVisible.value) {
+            scrollSync.syncEditorToPreview();
+            refreshMarkdownScrollSync();
+        }
+    },
 });
 
 // Markdown 预览与源文的双向同步滚动控制器。
@@ -325,18 +484,65 @@ const scrollSync = createScrollSync(
 );
 
 const { currentTheme } = useTheme();
+const {
+    fontSize,
+    default: defaultFontSize,
+    set: setFontSize,
+    reset: resetFontSize,
+} = useFontSize();
+
+// 缩放一档的步长倍数。Ctrl+滚轮一次事件通常 deltaY 约 100，
+// 但浏览器/系统差异较大；用方向归一化后再乘 step 保证体验稳定。
+const FONT_SIZE_WHEEL_STEP = 1;
+function handleFontSizeWheel(event) {
+    if (!event.ctrlKey && !event.metaKey) {
+        return;
+    }
+    // 拦截浏览器原生缩放行为。
+    event.preventDefault();
+    event.stopPropagation();
+    const direction = event.deltaY < 0 ? 1 : -1;
+    setFontSize(fontSize.value + direction * FONT_SIZE_WHEEL_STEP);
+}
+
+function bindFontSizeWheel(element) {
+    if (!element) {
+        return;
+    }
+    // passive 必须为 false 才能 preventDefault。
+    element.addEventListener("wheel", handleFontSizeWheel, { passive: false });
+}
+
+function unbindFontSizeWheel(element) {
+    if (!element) {
+        return;
+    }
+    element.removeEventListener("wheel", handleFontSizeWheel);
+}
+
+function handleFontSizeResetClick() {
+    if (fontSize.value === defaultFontSize) {
+        return;
+    }
+    resetFontSize();
+}
 
 // 渲染预览区内的 mermaid 图表；需等 v-html 完成 DOM 更新后执行。
-// 图表渲染会改变元素高度，完成后重建滚动同步锚点。
-function renderMarkdownMermaid(force = false) {
+// 图表渲染会改变元素高度，期间不能让预览滚动事件反向修改编辑器位置。
+async function renderMarkdownMermaid(force = false) {
     if (!isMarkdownPreviewFile.value || !webPreviewVisible.value) {
         return;
     }
-    nextTick(() => {
-        renderMermaidDiagrams(markdownPreviewBody.value, force).then(() => {
-            refreshMarkdownScrollSync();
-        });
-    });
+    const releaseScrollSync = scrollSync.suspend();
+    try {
+        await nextTick();
+        await renderMermaidDiagrams(markdownPreviewBody.value, force);
+        await nextTick();
+        scrollSync.syncEditorToPreview();
+        refreshMarkdownScrollSync();
+    } finally {
+        releaseScrollSync();
+    }
 }
 
 // 明暗主题切换时重渲已完成的 mermaid 图表，使配色跟随主题。
@@ -354,6 +560,36 @@ function refreshMarkdownScrollSync() {
     });
 }
 
+// 只允许最新一次渲染结果写入 DOM。渲染期间保留编辑器滚动位置，
+// 完成后从编辑器单向校准预览，避免预览重排触发反向跳动。
+async function renderMarkdownPreview() {
+    if (!isMarkdownPreviewFile.value || !webPreviewVisible.value) {
+        return;
+    }
+
+    const token = ++markdownRenderToken;
+    const releaseScrollSync = scrollSync.suspend();
+    try {
+        const html = await renderMarkdown(getContent());
+        if (token !== markdownRenderToken || !webPreviewVisible.value) {
+            return;
+        }
+
+        markdownPreviewHtml.value = html;
+        await nextTick();
+        await renderMermaidDiagrams(markdownPreviewBody.value);
+        await nextTick();
+
+        if (token !== markdownRenderToken || !webPreviewVisible.value) {
+            return;
+        }
+        scrollSync.syncEditorToPreview();
+        refreshMarkdownScrollSync();
+    } finally {
+        releaseScrollSync();
+    }
+}
+
 // 编辑 Markdown 时防抖刷新右侧预览，实现「编辑即预览」。
 function scheduleMarkdownLivePreview() {
     if (!isMarkdownPreviewFile.value || !webPreviewVisible.value) {
@@ -364,11 +600,7 @@ function scheduleMarkdownLivePreview() {
     }
     markdownLivePreviewTimer = setTimeout(() => {
         markdownLivePreviewTimer = null;
-        void renderMarkdown(getContent()).then((html) => {
-            markdownPreviewHtml.value = html;
-            renderMarkdownMermaid();
-            refreshMarkdownScrollSync();
-        });
+        void renderMarkdownPreview();
     }, MARKDOWN_LIVE_PREVIEW_DELAY);
 }
 
@@ -389,6 +621,7 @@ watch([() => props.extension, () => props.name], ([extension, name]) => {
         clearTimeout(markdownLivePreviewTimer);
         markdownLivePreviewTimer = null;
     }
+    markdownRenderToken += 1;
     webPreviewVisible.value = false;
     webPreviewContent.value = "";
     markdownPreviewHtml.value = "";
@@ -401,11 +634,7 @@ watch(
             return;
         }
         if (isMarkdownPreviewFile.value) {
-            void renderMarkdown(getContent()).then((html) => {
-                markdownPreviewHtml.value = html;
-                renderMarkdownMermaid();
-                refreshMarkdownScrollSync();
-            });
+            void renderMarkdownPreview();
         } else {
             webPreviewContent.value = getContent();
         }
@@ -557,6 +786,8 @@ watch(
             lastContentVersion = contentVersion;
             lastExtension = extension;
             lastName = name;
+            // 编辑器挂载后绑定 Ctrl+滚轮缩放；编辑器 dom 替换会重建此节点。
+            bindFontSizeWheel(editor?.dom);
             void configureLanguage();
             return;
         }
@@ -581,15 +812,42 @@ watch(
 );
 
 onBeforeUnmount(() => {
+    document.removeEventListener("click", handleDocumentClick);
+    document.removeEventListener("keydown", handleDocumentKeydown);
     documentSyncToken += 1;
+    markdownRenderToken += 1;
     if (markdownLivePreviewTimer !== null) {
         clearTimeout(markdownLivePreviewTimer);
         markdownLivePreviewTimer = null;
     }
     stopWebPreviewResize();
     scrollSync.dispose();
+    unbindFontSizeWheel(editor?.dom);
     editor?.destroy();
     editor = null;
+});
+
+// ---- 文件格式 / 编码下拉菜单外部关闭逻辑 ----
+function handleDocumentClick(event) {
+    if (!syntaxMenuOpen.value && !encodingMenuOpen.value) {
+        return;
+    }
+    // 模板中的根节点上加了 @mousedown.stop，使按钮和菜单自身的点击不会冒泡到这里。
+    if (event.target?.closest?.(".code-preview-dropdown")) {
+        return;
+    }
+    closeAllMenus();
+}
+
+function handleDocumentKeydown(event) {
+    if (event.key === "Escape") {
+        closeAllMenus();
+    }
+}
+
+onMounted(() => {
+    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("keydown", handleDocumentKeydown);
 });
 
 async function replaceEditorContent(content) {
@@ -733,11 +991,7 @@ function handleMarkdownPreviewClick() {
     }
 
     webPreviewVisible.value = true;
-    void renderMarkdown(getContent()).then((html) => {
-        markdownPreviewHtml.value = html;
-        renderMarkdownMermaid();
-        refreshMarkdownScrollSync();
-    });
+    void renderMarkdownPreview();
 }
 
 // 请求在新标签页中打开当前文件的只读预览，携带编辑器中的最新内容。
@@ -847,7 +1101,7 @@ async function configureLanguage() {
     padding: 24px 28px;
     background: var(--bg-surface);
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: var(--mfv-font-size, 14px);
     line-height: 1.7;
     word-wrap: break-word;
 }
@@ -870,29 +1124,84 @@ async function configureLanguage() {
     gap: 4px;
 }
 
-.code-preview-encoding-select {
-    height: 20px;
-    padding: 0 2px;
+/* ---- 文件格式 / 编码 下拉按钮 + 浮动菜单 ---- */
+.code-preview-dropdown {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.code-preview-dropdown__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 6px;
     border: 1px solid transparent;
-    border-radius: 2px;
+    border-radius: 3px;
     background: transparent;
     color: var(--text-secondary);
     font-size: 12px;
-    outline: none;
-    appearance: none;
+    line-height: 1;
     cursor: pointer;
+    outline: none;
+    user-select: none;
+    max-width: 200px;
 }
 
-.code-preview-encoding-select:focus {
-    padding: 0 4px;
-    border-color: var(--accent-primary);
+.code-preview-dropdown__btn:hover:not(:disabled) {
     background: var(--bg-surface);
-    appearance: auto;
+    color: var(--accent-active);
 }
 
-.code-preview-encoding-select:disabled {
+.code-preview-dropdown__btn:focus-visible {
+    border-color: var(--accent-primary);
+}
+
+.code-preview-dropdown__btn:disabled {
     cursor: not-allowed;
     opacity: 0.6;
+}
+
+.code-preview-dropdown__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.code-preview-dropdown__panel {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 50;
+    min-width: 180px;
+    max-height: 320px;
+    overflow-y: auto;
+    line-height: 1.4;
+}
+
+.code-preview-dropdown__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 0;
+}
+
+.code-preview-dropdown__item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.code-preview-dropdown__item-check {
+    flex-shrink: 0;
+    color: var(--accent-primary);
+    font-size: 12px;
+}
+
+.code-preview-dropdown__item--active {
+    color: var(--accent-active);
 }
 
 .code-preview-writable {
@@ -903,6 +1212,44 @@ async function configureLanguage() {
     font-size: 12px;
     cursor: pointer;
     user-select: none;
+}
+
+/* 字号显示/重置按钮：默认样式提示当前为默认字号；非默认时变为可点击的强调样式。 */
+.code-preview-fontsize {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    outline: none;
+    user-select: none;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.code-preview-fontsize:hover {
+    background: var(--bg-surface);
+    color: var(--accent-active);
+}
+
+.code-preview-fontsize:focus-visible {
+    border-color: var(--accent-primary);
+}
+
+.code-preview-fontsize--default {
+    color: var(--text-muted);
+    cursor: default;
+}
+
+.code-preview-fontsize--default:hover {
+    background: transparent;
+    color: var(--text-muted);
 }
 
 .code-preview-json-error {

@@ -13,6 +13,7 @@
  */
 export function createScrollSync(getEditor, getPreview) {
     let isSyncing = false;
+    let suspendDepth = 0;
     let rafId = 0;
     let boundEditorScroller = null;
     let boundPreview = null;
@@ -45,7 +46,7 @@ export function createScrollSync(getEditor, getPreview) {
     }
 
     function sync(fromEl, toEl) {
-        if (isSyncing || !fromEl || !toEl) {
+        if (suspendDepth > 0 || isSyncing || !fromEl || !toEl) {
             return;
         }
         isSyncing = true;
@@ -59,6 +60,31 @@ export function createScrollSync(getEditor, getPreview) {
 
     function handlePreviewScroll() {
         sync(getPreview(), getEditorScroller());
+    }
+
+    // 预览内容重建或图表异步渲染期间，DOM 高度变化可能产生滚动事件。
+    // 这些事件不是用户操作，不能反向修改编辑器的位置。返回释放函数，
+    // 支持多个异步刷新同时进行而不会提前解除保护。
+    function suspend() {
+        suspendDepth += 1;
+        return () => {
+            suspendDepth = Math.max(0, suspendDepth - 1);
+        };
+    }
+
+    function syncEditorToPreview() {
+        const previousSuspendDepth = suspendDepth;
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = 0;
+        }
+        isSyncing = false;
+        suspendDepth = 0;
+        try {
+            sync(getEditorScroller(), getPreview());
+        } finally {
+            suspendDepth = previousSuspendDepth;
+        }
     }
 
     // 绑定监听。预览容器可能在开启预览后才出现，因此每次 attach 都会重新
@@ -89,8 +115,9 @@ export function createScrollSync(getEditor, getPreview) {
         }
         detach();
         isSyncing = false;
+        suspendDepth = 0;
     }
 
     // 比例同步无需采集锚点，rebuild 仅重新绑定最新的滚动容器监听。
-    return { rebuild: attach, dispose };
+    return { rebuild: attach, dispose, suspend, syncEditorToPreview };
 }

@@ -7,117 +7,154 @@
         @drop="onDrop"
         @dragend="onDragEnd"
     >
-        <template v-if="tabs.length">
-            <lay-tab
-                class="preview-tabs__lay"
-                :model-value="activeTabPath"
-                @update:model-value="$emit('change-tab', $event)"
-            >
-                <lay-tab-item
-                    v-for="tab in tabs"
-                    :key="tab.path"
-                    :id="tab.path"
-                    :title="renderTabTitle(tab)"
+        <div
+            class="preview-tabs__container"
+            :class="{
+                'preview-tabs__container--empty': !tabs.length,
+            }"
+        >
+            <template v-if="tabs.length">
+                <lay-tab
+                    class="preview-tabs__lay"
+                    :model-value="activeTabPath"
+                    @update:model-value="$emit('change-tab', $event)"
                 >
-                    <div
-                        v-if="tab.status === 'loading'"
-                        class="preview-tabs__content preview-tabs__content--loading"
-                    ></div>
-
-                    <div
-                        v-else-if="tab.status === 'error'"
-                        class="preview-tabs__state preview-tabs__state--error"
+                    <lay-tab-item
+                        v-for="tab in tabs"
+                        :key="tab.path"
+                        :id="tab.path"
+                        :title="renderTabTitle(tab)"
                     >
-                        <p>{{ tab.error || "预览失败" }}</p>
-                    </div>
-
-                    <div v-else class="preview-tabs__content">
-                        <PreviewPane
-                            v-if="tab.previewType === 'preview'"
-                            class="preview-pane-tab"
-                            :content="tab.content"
-                            :extension="tab.extension"
-                            :name="tab.name"
-                        />
-
-                        <WordPreview
-                            v-else-if="tab.previewType === 'word'"
-                            class="office-preview"
-                            :src="tab.source"
-                            @error="(err) => handleRenderError(tab.path, err)"
-                        />
-
-                        <ExcelPreview
-                            v-else-if="
-                                ['excel', 'csv'].includes(tab.previewType)
-                            "
-                            class="excel-preview"
-                            :src="tab.source"
-                            :extension="tab.extension"
-                            :encoding="tab.encoding"
-                            @error="(err) => handleRenderError(tab.path, err)"
-                        />
-
-                        <PptPreview
-                            v-else-if="tab.previewType === 'ppt'"
-                            class="ppt-preview"
-                            :src="tab.source"
-                            @error="(err) => handleRenderError(tab.path, err)"
-                            @rendered="emit('preview-rendered', tab.path)"
-                        />
-
-                        <PdfPreview
-                            v-else-if="tab.previewType === 'pdf'"
-                            class="pdf-preview"
-                            :src="tab.source"
-                            :name="tab.name"
-                            @error="(err) => handleRenderError(tab.path, err)"
-                        />
-
-                        <ImagePreview
-                            v-else-if="tab.previewType === 'image'"
-                            class="image-preview"
-                            :src="tab.source"
-                            :extension="tab.extension"
-                            :name="tab.name"
-                            @error="(err) => handleRenderError(tab.path, err)"
-                        />
+                        <div
+                            v-if="tab.status === 'loading'"
+                            class="preview-tabs__content preview-tabs__content--loading"
+                        ></div>
 
                         <div
-                            v-else-if="tab.previewType === 'unsupported'"
+                            v-else-if="tab.status === 'error'"
                             class="preview-tabs__state preview-tabs__state--error"
                         >
-                            <p>{{ getUnsupportedMessage(tab) }}</p>
+                            <p>{{ tab.error || "预览失败" }}</p>
                         </div>
 
-                        <CodePreview
-                            v-else
-                            :ref="
-                                (component) =>
-                                    setCodePreviewRef(tab.path, component)
-                            "
-                            class="code-preview"
-                            :content="tab.content"
-                            :content-version="tab.contentVersion"
-                            :extension="tab.extension"
-                            :name="tab.name"
-                            :encoding="tab.encoding"
-                            :encoding-loading="tab.encodingLoading"
-                            @dirty="handleContentChange(tab.path)"
-                            @encoding-change="
-                                (encoding) =>
-                                    emit('encoding-change', tab.path, encoding)
-                            "
-                            @save="emit('save-tab', tab.path)"
-                            @open-in-new-tab="
-                                (payload) =>
-                                    emit('open-in-new-tab', tab.path, payload)
-                            "
-                        />
-                    </div>
-                </lay-tab-item>
-            </lay-tab>
-        </template>
+                        <div v-else class="preview-tabs__content">
+                            <PreviewPane
+                                v-if="tab.previewType === 'preview'"
+                                class="preview-pane-tab"
+                                :content="tab.content"
+                                :extension="tab.extension"
+                                :name="tab.name"
+                            />
+
+                            <WordPreview
+                                v-else-if="tab.previewType === 'word'"
+                                class="office-preview"
+                                :src="tab.source"
+                                @error="(err) => handleRenderError(tab.path, err)"
+                            />
+
+                            <ExcelPreview
+                                v-else-if="
+                                    ['excel', 'csv'].includes(tab.previewType)
+                                "
+                                class="excel-preview"
+                                :src="tab.source"
+                                :extension="tab.extension"
+                                :encoding="tab.encoding"
+                                @error="(err) => handleRenderError(tab.path, err)"
+                            />
+
+                            <PptPreview
+                                v-else-if="tab.previewType === 'ppt'"
+                                class="ppt-preview"
+                                :src="tab.source"
+                                @error="(err) => handleRenderError(tab.path, err)"
+                                @rendered="emit('preview-rendered', tab.path)"
+                            />
+
+                            <PdfPreview
+                                v-else-if="tab.previewType === 'pdf'"
+                                class="pdf-preview"
+                                :src="tab.source"
+                                :name="tab.name"
+                                @error="(err) => handleRenderError(tab.path, err)"
+                            />
+
+                            <ImagePreview
+                                v-else-if="tab.previewType === 'image'"
+                                class="image-preview"
+                                :src="tab.source"
+                                :extension="tab.extension"
+                                :name="tab.name"
+                                @error="(err) => handleRenderError(tab.path, err)"
+                            />
+
+                            <div
+                                v-else-if="tab.previewType === 'unsupported'"
+                                class="preview-tabs__state preview-tabs__state--error"
+                            >
+                                <p>{{ getUnsupportedMessage(tab) }}</p>
+                            </div>
+
+                            <CodePreview
+                                v-else
+                                :ref="
+                                    (component) =>
+                                        setCodePreviewRef(tab.path, component)
+                                "
+                                class="code-preview"
+                                :content="tab.content"
+                                :content-version="tab.contentVersion"
+                                :extension="tab.extension"
+                                :name="tab.name"
+                                :encoding="tab.encoding"
+                                :encoding-loading="tab.encodingLoading"
+                                @dirty="handleContentChange(tab.path)"
+                                @encoding-change="
+                                    (encoding) =>
+                                        emit('encoding-change', tab.path, encoding)
+                                "
+                                @save="emit('save-tab', tab.path)"
+                                @open-in-new-tab="
+                                    (payload) =>
+                                        emit('open-in-new-tab', tab.path, payload)
+                                "
+                            />
+                        </div>
+                    </lay-tab-item>
+                </lay-tab>
+            </template>
+            <div v-else class="preview-tabs__empty-hint">
+                <p>当前没有打开的标签</p>
+                <p class="preview-tabs__empty-hint-sub">
+                    点击右上角 <span class="preview-tabs__empty-hint-icon">+</span>
+                    新建一个可编辑的空白标签
+                </p>
+            </div>
+            <button
+                type="button"
+                class="preview-tabs__new-btn"
+                title="新建空白标签"
+                aria-label="新建空白标签"
+                @click="emit('new-tab')"
+            >
+                <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    class="preview-tabs__new-btn-icon"
+                    aria-hidden="true"
+                    focusable="false"
+                >
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+            </button>
+        </div>
     </section>
 </template>
 
@@ -153,6 +190,7 @@ const emit = defineEmits([
     "save-tab",
     "open-in-new-tab",
     "reorder-tab",
+    "new-tab",
 ]);
 
 const codePreviewRefs = ref({});

@@ -294,8 +294,6 @@ import { useFontSize } from "../composables/useFontSize.js";
 import {
     syntaxOptions,
     detectSyntaxKey,
-    isStandaloneWebFile,
-    isMarkdownFile,
 } from "../composables/useFileTypes.js";
 import { resolveLanguageBySyntaxKey } from "../composables/useLanguageLoader.js";
 import {
@@ -416,10 +414,12 @@ const syncingDocument = ref(false);
 const readonly = ref(false);
 // JSON 格式化/压缩解析失败时的错误提示，仅在 JSON 语法下显示。
 const jsonError = ref("");
-const isStandaloneWebPreviewFile = computed(() =>
-    isStandaloneWebFile(props.extension),
+const isStandaloneWebPreviewFile = computed(
+    () => selectedSyntax.value === "html",
 );
-const isMarkdownPreviewFile = computed(() => isMarkdownFile(props.extension));
+const isMarkdownPreviewFile = computed(
+    () => selectedSyntax.value === "markdown",
+);
 const showPreviewIcon = computed(
     () => isStandaloneWebPreviewFile.value || isMarkdownPreviewFile.value,
 );
@@ -453,6 +453,16 @@ let markdownRenderToken = 0;
 let lastContentVersion = null;
 let lastExtension = "";
 let lastName = "";
+// 跟踪「当前 syntax 是否由用户在下拉里手动选择过」：true 时 watch 只清理预览状态，
+// 不再用 props.extension 推断的 syntax 覆盖用户的选择。
+// 主要场景：空白 tab 的 extension 固定为 .txt，但用户会切换到 markdown/json 等其他格式；
+// 一旦开始输入，App.vue 会把 tab.name 改为输入内容的前 10 个字符，
+// 此时不能再因为「name 变了」就把 syntax 重置回 text。
+let userOverrodeSyntax = false;
+// 独立跟踪最近一次进入 watch 的 extension，用于判断「extension 真的变了（新文件）」
+// 与「name 变了（virtual tab 编辑）」两种情况。初始就同步为当前 extension，
+// 避免首次 watch 触发时被误判为「extension 变化」并清掉用户刚选过的 syntax。
+let lastSeenExtension = props.extension;
 let releaseResizeScrollSync = null;
 
 // 预览面板拖拽调宽控制器；拖拽结束后重建 Markdown 滚动同步锚点。
@@ -616,15 +626,23 @@ watch(
 );
 
 watch([() => props.extension, () => props.name], ([extension, name]) => {
-    selectedSyntax.value = detectSyntaxKey(extension, name);
-    if (markdownLivePreviewTimer !== null) {
-        clearTimeout(markdownLivePreviewTimer);
-        markdownLivePreviewTimer = null;
+    // 仅当 extension 真的变化（切换到新文件）时，才用 extension/name 重新推断 syntax
+    // 并重置「用户主动选择」标记，同时清空分屏预览状态；仅 name 变化时
+    // （virtual tab 编辑内容触发）保留用户在下拉里选过的 syntax 与已打开的预览。
+    const extensionChanged = extension !== lastSeenExtension;
+    lastSeenExtension = extension;
+    if (extensionChanged) {
+        userOverrodeSyntax = false;
+        selectedSyntax.value = detectSyntaxKey(extension, name);
+        if (markdownLivePreviewTimer !== null) {
+            clearTimeout(markdownLivePreviewTimer);
+            markdownLivePreviewTimer = null;
+        }
+        markdownRenderToken += 1;
+        webPreviewVisible.value = false;
+        webPreviewContent.value = "";
+        markdownPreviewHtml.value = "";
     }
-    markdownRenderToken += 1;
-    webPreviewVisible.value = false;
-    webPreviewContent.value = "";
-    markdownPreviewHtml.value = "";
 });
 
 watch(
@@ -956,6 +974,17 @@ function handleSyntaxChange(event) {
     }
 
     selectedSyntax.value = event.target.value;
+    // 标记用户主动通过下拉修改过 syntax，避免后续 name 变化时 watch 用
+    // props.extension 推断的默认值把它覆盖回去。
+    userOverrodeSyntax = true;
+    webPreviewVisible.value = false;
+    webPreviewContent.value = "";
+    markdownPreviewHtml.value = "";
+    markdownRenderToken += 1;
+    if (markdownLivePreviewTimer !== null) {
+        clearTimeout(markdownLivePreviewTimer);
+        markdownLivePreviewTimer = null;
+    }
     // 切到 JSON 时自动关闭只读，确保格式化/压缩等操作可用
     if (event.target.value === "json" && readonly.value) {
         readonly.value = false;
@@ -1004,6 +1033,7 @@ function handleOpenInNewTab() {
         content: getContent(),
         extension: props.extension,
         name: props.name,
+        syntax: selectedSyntax.value,
     });
 }
 
@@ -1098,7 +1128,7 @@ async function configureLanguage() {
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 24px 28px;
+    padding: 4px 4px;
     background: var(--bg-surface);
     color: var(--text-primary);
     font-size: var(--mfv-font-size, 14px);

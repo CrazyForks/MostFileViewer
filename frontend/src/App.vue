@@ -155,6 +155,7 @@
                             @save-tab="handleSaveTab"
                             @open-in-new-tab="handleOpenInNewTab"
                             @reorder-tab="handleReorderTab"
+                            @new-tab="handleNewTab"
                         />
                     </div>
                 </section>
@@ -280,6 +281,9 @@ const encodingChangeRequests = new Map();
 let autoSaveIntervalTimer = null;
 const AUTO_SAVE_DEBOUNCE_DELAY = 2500; // 2.5秒防抖
 const AUTO_SAVE_INTERVAL_DELAY = 60000; // 60秒定时保存
+
+// 未命名（空白可编辑）tab 的自增计数器，保证多个未命名 tab 的 path 与 name 互不重复。
+let untitledCounter = 0;
 
 const workspaceStyle = computed(() => ({
     gridTemplateColumns: sidebarOpen.value
@@ -861,6 +865,7 @@ function handleOpenInNewTab(sourcePath, payload) {
         updateTab(previewPath, {
             content: payload.content ?? "",
             extension: payload.extension || existingTab.extension,
+            syntax: payload.syntax || existingTab.syntax,
         });
         activeTabPath.value = previewPath;
         return;
@@ -870,6 +875,7 @@ function handleOpenInNewTab(sourcePath, payload) {
         path: previewPath,
         name: previewName,
         extension: payload.extension || "",
+        syntax: payload.syntax || "",
         status: "ready",
         previewType: "preview",
         previewOnly: true,
@@ -889,6 +895,35 @@ function handleOpenInNewTab(sourcePath, payload) {
     activeTabPath.value = previewPath;
 }
 
+// 新建一个空白可编辑文字 tab。复用 CodePreview（previewType: 'code'），
+// 但用 untitled:// 前缀的虚拟 path，并打上 virtual 标记，关闭时不走保存、不参与会话持久化。
+function handleNewTab() {
+    untitledCounter += 1;
+    const tab = {
+        path: `untitled://${untitledCounter}`,
+        name: untitledCounter > 1 ? `未命名 ${untitledCounter}` : "未命名",
+        extension: ".txt",
+        status: "ready",
+        previewType: "code",
+        virtual: true,
+        previewOnly: true,
+        source: null,
+        content: "",
+        encoding: "utf-8",
+        dirty: false,
+        saving: false,
+        saveError: "",
+        encodingLoading: false,
+        contentVersion: 0,
+        changeVersion: 0,
+        savedVersion: 0,
+    };
+
+    openTabs.value = [...openTabs.value, tab];
+    activeTabPath.value = tab.path;
+    schedulePersistWorkspaceSession();
+}
+
 async function handleCloseTab(path) {
     const currentIndex = openTabs.value.findIndex((tab) => tab.path === path);
     if (currentIndex === -1) {
@@ -897,12 +932,15 @@ async function handleCloseTab(path) {
 
     let currentTab = openTabs.value.find((tab) => tab.path === path);
     const isPreviewOnly = currentTab?.previewOnly === true;
-    if (currentTab?.dirty) {
+    const isVirtual = currentTab?.virtual === true;
+    if (currentTab?.dirty && !isVirtual) {
         await handleSaveTab(path);
         currentTab = openTabs.value.find((tab) => tab.path === path);
     }
 
-    if (currentTab?.dirty || currentTab?.saving) {
+    // virtual tab（空白可编辑）不存在保存目标，dirty 状态仅用于视觉提示，
+    // 关闭时一律放行；普通 tab 在保存失败或正在保存时仍需阻止关闭，避免丢数据。
+    if (!isVirtual && (currentTab?.dirty || currentTab?.saving)) {
         return;
     }
 
@@ -920,7 +958,7 @@ async function handleCloseTab(path) {
     const nextTabs = openTabs.value.filter((tab) => tab.path !== path);
     openTabs.value = nextTabs;
 
-    // 注销已关闭 tab 的文件路径（合成预览 tab 未注册后端路径，跳过）
+    // 注销已关闭 tab 的文件路径（合成预览 / 未命名 tab 未注册后端路径，跳过）
     if (!isPreviewOnly) {
         await unregisterOpenPath(path);
     }
@@ -976,14 +1014,37 @@ function handleContentChange(path) {
         return;
     }
 
-    updateTab(path, {
+    const updates = {
         dirty: true,
         saveError: "",
         changeVersion: (tab.changeVersion ?? 0) + 1,
-    });
+    };
+
+    // 未命名（virtual）tab：以编辑器内首段内容的前 10 个字符作为标签名，
+    // 内容清空后恢复为「未命名」/「未命名 N」。仅 virtual 走此规则，普通文件保留原名。
+    if (tab.virtual) {
+        const latest =
+            previewTabs.value?.getCodeContent?.(path) ?? tab.content ?? "";
+        updates.name = deriveUntitledName(latest);
+    }
+
+    updateTab(path, updates);
 
     scheduleLivePreviewSync(path);
-    scheduleAutoSave(path);
+    if (!tab.virtual) {
+        scheduleAutoSave(path);
+    }
+}
+
+// 派生未命名 tab 的标签名：去掉首尾空白与换行，按字符（code point）切前 10 个；
+// 内容为空时返回默认名（带计数器后缀）。
+function deriveUntitledName(content) {
+    const flat = String(content || "").replace(/[\r\n]+/g, " ").trim();
+    if (!flat) {
+        return untitledCounter > 1 ? `未命名 ${untitledCounter}` : "未命名";
+    }
+    const sliced = [...flat].slice(0, 10).join("");
+    return sliced || (untitledCounter > 1 ? `未命名 ${untitledCounter}` : "未命名");
 }
 
 // 源文件编辑时，防抖刷新其对应的只读预览 tab，实现「编辑即预览」。
@@ -1012,7 +1073,12 @@ function scheduleLivePreviewSync(sourcePath) {
 
 async function handleEncodingChange(path, encoding) {
     let tab = openTabs.value.find((item) => item.path === path);
-    if (!tab || tab.previewType !== "code" || tab.status !== "ready") {
+    if (
+        !tab ||
+        tab.previewType !== "code" ||
+        tab.status !== "ready" ||
+        tab.virtual
+    ) {
         return;
     }
     if (tab.encoding === encoding || tab.encodingLoading) {
@@ -1072,7 +1138,8 @@ async function handleSaveTab(path = activeTabPath.value) {
         tab.previewType !== "code" ||
         tab.status !== "ready" ||
         tab.saving ||
-        tab.encodingLoading
+        tab.encodingLoading ||
+        tab.virtual
     ) {
         return;
     }

@@ -87,10 +87,11 @@ export const chineseSearchPhrases = CMState.phrases.of({
 });
 
 // 编辑器主题样式：布局、配色、搜索面板控件样式，均引用 --cm-* 变量。
+// 字号使用 --mfv-font-size 变量驱动，由 useFontSize 维护；初次渲染前变量未设置时退回 13px。
 export const editorTheme = EditorView.theme({
     "&": {
         height: "100%",
-        fontSize: "13px",
+        fontSize: "var(--mfv-font-size, 13px)",
         backgroundColor: "var(--cm-bg)",
         color: "var(--cm-text)",
     },
@@ -98,7 +99,7 @@ export const editorTheme = EditorView.theme({
         fontFamily: '"JetBrains Mono", "Fira Code", Consolas, monospace',
     },
     ".cm-content": {
-        padding: "16px 0",
+        padding: "0",
         position: "relative",
         zIndex: 2,
         backgroundColor: "transparent",

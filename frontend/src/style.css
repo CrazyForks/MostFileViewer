@@ -336,6 +336,87 @@ input {
     overflow: hidden;
 }
 
+/* 新增空白 tab 按钮的容器：让按钮与 tab 签同高度对齐。 */
+.preview-tabs__container {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+}
+
+.preview-tabs__container--empty {
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-tabs__empty-hint {
+    color: var(--text-muted);
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.8;
+    user-select: none;
+    pointer-events: none;
+}
+
+.preview-tabs__empty-hint-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    opacity: 0.85;
+}
+
+.preview-tabs__empty-hint-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1;
+    margin: 0 2px;
+    vertical-align: -2px;
+}
+
+/* 新增空白 tab 按钮：固定在 tab 签区域最右侧，与 tab 签等高。 */
+.preview-tabs__new-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: var(--tab-height);
+    width: var(--tab-height);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-left: 1px solid var(--border-subtle);
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    z-index: 5;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.preview-tabs__new-btn:hover {
+    background: var(--bg-panel);
+    color: var(--accent-hover);
+}
+
+.preview-tabs__new-btn:focus-visible {
+    outline: 1px solid var(--accent-primary);
+    outline-offset: -2px;
+    color: var(--accent-primary);
+}
+
+.preview-tabs__new-btn-icon {
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
+}
+
 .preview-tabs__lay {
     display: flex;
     flex-direction: column;
@@ -418,6 +499,8 @@ input {
 /* 覆盖 layui 默认 tab 高度（40px），通过 --tab-height 统一控制 */
 .preview-tabs__lay .layui-tab-title {
     height: var(--tab-height);
+    /* 留出最右侧「新增空白 tab」按钮的占位，避免 tabs 溢出时滑到按钮下被遮挡。 */
+    padding-right: var(--tab-height);
 }
 
 .preview-tabs__lay .layui-tab-bar {

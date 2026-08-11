@@ -37,6 +37,10 @@ const props = defineProps({
         type: String,
         default: "",
     },
+    syntax: {
+        type: String,
+        default: "",
+    },
     name: {
         type: String,
         default: "",
@@ -47,8 +51,12 @@ const markdownBody = ref(null);
 const markdownHtml = ref("");
 const { currentTheme } = useTheme();
 
-const isStandaloneWeb = computed(() => isStandaloneWebFile(props.extension));
-const isMarkdown = computed(() => isMarkdownFile(props.extension));
+const isStandaloneWeb = computed(() =>
+    props.syntax ? props.syntax === "html" : isStandaloneWebFile(props.extension),
+);
+const isMarkdown = computed(() =>
+    props.syntax ? props.syntax === "markdown" : isMarkdownFile(props.extension),
+);
 
 // 渲染预览区内的 mermaid 图表；需等 v-html 完成 DOM 更新后执行。
 function renderDiagrams(force = false) {
@@ -62,7 +70,7 @@ function renderDiagrams(force = false) {
 
 // 内容或文件切换时重新渲染 Markdown（异步：代码块高亮通过懒加载语言包完成）。
 watch(
-    [() => props.content, () => props.extension],
+    [() => props.content, () => props.extension, () => props.syntax],
     async () => {
         if (isMarkdown.value) {
             markdownHtml.value = await renderMarkdown(props.content);
